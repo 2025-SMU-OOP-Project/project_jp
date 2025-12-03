@@ -39,9 +39,8 @@ public class Player {
     public Player(GamePanel gp, KeyHandler keyH, WeaponType weaponType) {
         this.gp = gp;
         this.keyH = keyH;
-
-        screenX = (gp.getScreenWidth() / 2) - (width / 2);
-        screenY = (gp.getScreenHeight() / 2) - (height / 2);
+        
+        updateScreenCenter();
 
         worldX = 0;
         worldY = 0;
@@ -51,6 +50,12 @@ public class Player {
 
         // 기본 무기 : Sword  (무기 타입에 따라 결정)
         setInitialWeapon(weaponType);
+    }
+    
+ // 화면 크기에 맞춰 캐릭터를 가운데로 위치시키는 메서드
+    public void updateScreenCenter() {
+        screenX = (gp.getWidth()  / 2) - (width  / 2);
+        screenY = (gp.getHeight() / 2) - (height / 2);
     }
     
     private void setInitialWeapon(WeaponType type) {
@@ -78,8 +83,7 @@ public class Player {
 
     public void update() {
         // 창 크기 바뀔 때에도 항상 중앙
-        screenX = (gp.getWidth() / 2) - (width / 2);
-        screenY = (gp.getHeight() / 2) - (height / 2);
+    	updateScreenCenter();
 
         if (keyH.upPressed) worldY -= speed;
         if (keyH.downPressed) worldY += speed;

@@ -9,8 +9,12 @@ import java.util.ArrayList;
 import java.util.Random;
 
 import game.combat.Weapon;
+import game.combat.SwordWeapon;
+import game.combat.BowWeapon;
+import game.combat.StaffWeapon;
 import game.combat.ArrowProjectile;
 import game.combat.WeaponType;
+import game.combat.FireballProjectile;
 import game.entity.player.Player;
 import game.entity.monster.Monster;
 import game.state.GameState;
@@ -31,6 +35,7 @@ public class GamePanel extends JPanel implements KeyListener {
     public List<Monster> monsters = new ArrayList<>();
     
     private java.util.List<ArrowProjectile> arrows = new ArrayList<>();
+    private java.util.List<FireballProjectile> fireballs = new ArrayList<>();
 
     public GameState gameState = GameState.RUNNING;
     private boolean paused = false;
@@ -60,7 +65,7 @@ public class GamePanel extends JPanel implements KeyListener {
     // ----------------------------------------------------
     // 생성자
     // ----------------------------------------------------
-    public GamePanel(MainScreen mainFrame, WeaponType initialWeaponType) {
+    public GamePanel(MainScreen mainFrame) {
         this.mainFrame = mainFrame;
 
         setPreferredSize(new Dimension(SCREEN_WIDTH, SCREEN_HEIGHT));
@@ -74,7 +79,7 @@ public class GamePanel extends JPanel implements KeyListener {
 
         loadImages();
 
-        player = new Player(this, keyH, initialWeaponType);
+        player = new Player(this, keyH, null);
 
         pausePanel = new PausePanel();
         pausePanel.setVisible(false);
@@ -89,6 +94,10 @@ public class GamePanel extends JPanel implements KeyListener {
                     pausePanel.setBounds(0, 0, getWidth(), getHeight());
                     pausePanel.revalidate();
                     pausePanel.repaint();
+                }
+                // 창 크기 바뀔 때 플레이어도 가운데로 재정렬
+                if (player != null) {
+                    player.updateScreenCenter();
                 }
             }
         });
@@ -123,11 +132,21 @@ public class GamePanel extends JPanel implements KeyListener {
     public void spawnArrow(double startX, double startY, double dirX, double dirY, int damage, int hitsAllowed) {
     	arrows.add(new ArrowProjectile(this, startX, startY, dirX, dirY, damage, hitsAllowed));
     }
+    
+    // StaffWeapon이 호출하는 파이어볼 생성 메소드
+    public void spawnFireball(double startX, double startY,
+                              double dirX, double dirY,
+                              int damage, int radius) {
+        fireballs.add(new FireballProjectile(this, startX, startY, dirX, dirY, damage, radius));
+    }
 
     // ----------------------------------------------------
     // 게임 루프 시작
     // ----------------------------------------------------
     public void startGameLoop() {
+    	// 게임 루프 돌리기 전에 무기 선택
+        selectWeaponAtStart();
+        
         gameTimer = new Timer(1000 / FPS, e -> {
             update();
             repaint();
@@ -189,6 +208,14 @@ public class GamePanel extends JPanel implements KeyListener {
                 }
                 arrow.update(monsters, player);
             }
+            // 파이어볼 업데이트
+            for (FireballProjectile fb : new ArrayList<>(fireballs)) {
+                if (!fb.isAlive()) {
+                    fireballs.remove(fb);
+                    continue;
+                }
+                fb.update(monsters, player);
+            }
 
             // 데미지 텍스트 업데이트 및 제거
             damageTexts.removeIf(DamageText::update);
@@ -211,6 +238,50 @@ public class GamePanel extends JPanel implements KeyListener {
     // 데미지 텍스트 추가 (무기가 호출)
     public void addDamageText(int screenX, int screenY, int damage) {
         damageTexts.add(new DamageText(screenX, screenY, damage));
+    }
+    
+    /** 게임 시작 시 한 번만 호출되는 무기 선택 다이얼로그 */
+    private void selectWeaponAtStart() {
+        String[] options = {
+                "Sword - 근거리, 빠른 쿨",
+                "Bow   - 중거리, 투사체",
+                "Staff - 범위 공격"
+        };
+
+        int result = JOptionPane.showOptionDialog(
+                this,
+                "시작 무기를 선택하세요.",
+                "무기 선택",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                options,
+                options[0]   // 기본 선택은 Sword
+        );
+
+        // X 눌렀거나 취소한 경우 → 기본 무기(Sword) 유지
+        if (result == JOptionPane.CLOSED_OPTION || result < 0) {
+            requestFocusInWindow();
+            return;
+        }
+
+        // 선택 결과에 따라 무기 교체
+        switch (result) {
+            case 0: // Sword
+                player.setWeapon(new SwordWeapon());
+                break;
+            case 1: // Bow
+                player.setWeapon(new BowWeapon());
+                break;
+            case 2: // Staff
+                player.setWeapon(new StaffWeapon());
+                break;
+            default:
+                player.setWeapon(new SwordWeapon());
+        }
+
+        // 다이얼로그 닫힌 뒤 키 입력이 게임으로 가도록 포커스 되찾기
+        requestFocusInWindow();
     }
 
     // ----------------------------------------------------
@@ -240,6 +311,11 @@ public class GamePanel extends JPanel implements KeyListener {
         // 화살 투사체
         for (ArrowProjectile arrow : arrows) {
             arrow.draw(g2, player);
+        }
+        
+        // 파이어볼 투사체 / 폭발
+        for (FireballProjectile fb : fireballs) {
+            fb.draw(g2, player);
         }
         
         // 데미지 텍스트
@@ -327,6 +403,11 @@ public class GamePanel extends JPanel implements KeyListener {
     private void showPauseMenu() {
         paused = true;
         gameState = GameState.PAUSED;
+        
+        // 일시정지 들어갈 때도 한 번 가운데 보정
+        if (player != null) {
+            player.updateScreenCenter();
+        }
 
         // 화면 전체를 덮는 오버레이
         pausePanel.setBounds(0, 0, getWidth(), getHeight());
