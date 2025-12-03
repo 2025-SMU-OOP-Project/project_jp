@@ -4,7 +4,10 @@ import java.awt.*;
 import javax.swing.ImageIcon;
 
 import game.combat.SwordWeapon;
+import game.combat.BowWeapon;
+import game.combat.StaffWeapon;
 import game.combat.Weapon;
+import game.combat.WeaponType;
 import game.main.GamePanel;
 import game.main.KeyHandler;
 
@@ -33,7 +36,7 @@ public class Player {
     // 현재 장착 무기
     private Weapon weapon;
 
-    public Player(GamePanel gp, KeyHandler keyH) {
+    public Player(GamePanel gp, KeyHandler keyH, WeaponType weaponType) {
         this.gp = gp;
         this.keyH = keyH;
 
@@ -46,8 +49,27 @@ public class Player {
 
         loadImage();
 
-        // 기본 무기 : Sword
-        weapon = new SwordWeapon();
+        // 기본 무기 : Sword  (무기 타입에 따라 결정)
+        setInitialWeapon(weaponType);
+    }
+    
+    private void setInitialWeapon(WeaponType type) {
+        if (type == null) {
+            weapon = new SwordWeapon();
+            return;
+        }
+
+        switch (type) {
+            case BOW:
+                weapon = new BowWeapon();
+                break;
+            case STAFF:
+                weapon = new StaffWeapon();
+                break;
+            case SWORD:
+            default:
+                weapon = new SwordWeapon();
+        }
     }
 
     private void loadImage() {

@@ -46,6 +46,10 @@ public class SwordWeapon implements Weapon {
 
             if (atkArea.intersects(m.getBounds())) {
                 m.takeDamage(damage);
+                int screenX = m.worldX - player.worldX + player.screenX;
+                int screenY = m.worldY - player.worldY + player.screenY;
+                gp.addDamageText(screenX, screenY, damage);
+                
                 System.out.println("Sword hit " + m + " for " + damage);
             }
         }

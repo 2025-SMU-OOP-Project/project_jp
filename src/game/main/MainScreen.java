@@ -5,7 +5,12 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.RoundRectangle2D;
 
+import game.combat.WeaponType;
+
 public class MainScreen extends JFrame {
+
+    // ★★★ 여기! 클래스 필드로 선언해야 함 (메소드 안 X) ★★★
+    private WeaponType selectedWeaponType = WeaponType.SWORD; // 기본 무기: 검
 
     // ===== 커스텀 버튼 클래스 =====
     static class GameButton extends JButton implements MouseListener {
@@ -102,7 +107,7 @@ public class MainScreen extends JFrame {
         private final float baseSize = 60f;      // 기본 폰트 크기
         private final Timer timer;               // Swing Timer
 
-        // 🔥 파티클(불꽃) 데이터
+        // 파티클(불꽃) 데이터
         private static class FlameParticle {
             int x, y;
             float alpha;
@@ -120,7 +125,7 @@ public class MainScreen extends JFrame {
 
             // 타이틀 애니메이션 + 파티클 생성
             timer = new Timer(33, e -> {
-                phase += 0.08;  
+                phase += 0.08;
                 updateParticles();
                 generateParticles();
                 repaint();
@@ -128,19 +133,17 @@ public class MainScreen extends JFrame {
             timer.start();
         }
 
-        // 🔥 불꽃 파티클 생성
         private void generateParticles() {
-            if (particles.size() > 80) return; // 과부하 방지
+            if (particles.size() > 80) return;
 
             FlameParticle p = new FlameParticle();
-            p.x = rand.nextInt(getWidth());
+            p.x = rand.nextInt(Math.max(1, getWidth()));
             p.y = getHeight() / 2 + 20;
 
             p.size = 5 + rand.nextFloat() * 6;
             p.alpha = 1.0f;
             p.vy = 1.0f + rand.nextFloat() * 1.5f;
 
-            // 랜덤한 불꽃 색상
             p.color = new Color(
                     255,
                     100 + rand.nextInt(100),
@@ -151,7 +154,6 @@ public class MainScreen extends JFrame {
             particles.add(p);
         }
 
-        // 🔥 파티클 움직임 업데이트
         private void updateParticles() {
             for (int i = particles.size() - 1; i >= 0; i--) {
                 FlameParticle p = particles.get(i);
@@ -174,7 +176,6 @@ public class MainScreen extends JFrame {
             int w = getWidth();
             int h = getHeight();
 
-            // 크기 펄스 + 위아래 흔들림
             double scale = 1.0 + 0.06 * Math.sin(phase);
             int yOffset = (int)(5 * Math.sin(phase * 2));
 
@@ -189,18 +190,18 @@ public class MainScreen extends JFrame {
             int x = (w - textWidth) / 2;
             int y = h / 2 + textHeight / 2 + yOffset;
 
-            // 1. 텍스트 뒤의 불꽃 글로우
+            // 글로우
             for (int i = 6; i > 0; i--) {
                 float alpha = 0.07f * i;
                 g2.setColor(new Color(255, 140, 0, (int)(alpha * 255)));
                 g2.drawString(text, x, y - i * 2);
             }
 
-            // 2. 텍스트 그림자
+            // 그림자
             g2.setColor(new Color(0, 0, 0, 160));
             g2.drawString(text, x + 4, y + 4);
 
-            // 3. 본 텍스트 (불꽃 그라데이션)
+            // 본 텍스트
             GradientPaint gp = new GradientPaint(
                     x, y - textHeight,
                     new Color(255, 120, 0),
@@ -210,7 +211,7 @@ public class MainScreen extends JFrame {
             g2.setPaint(gp);
             g2.drawString(text, x, y);
 
-            // 4. 파티클 불꽃 렌더링
+            // 파티클
             for (FlameParticle p : particles) {
                 g2.setColor(new Color(
                         p.color.getRed(),
@@ -258,16 +259,20 @@ public class MainScreen extends JFrame {
         Dimension btnSize = new Dimension(200, 70);
 
         GameButton startBtn    = new GameButton("시작");
+        GameButton weaponBtn   = new GameButton("무기 선택");
         GameButton continueBtn = new GameButton("이어하기");
         GameButton exitBtn     = new GameButton("종료");
 
-        GameButton[] btnArr = {startBtn, continueBtn, exitBtn};
+        GameButton[] btnArr = {startBtn, weaponBtn, continueBtn, exitBtn};
         for (GameButton btn : btnArr) {
             btn.setPreferredSize(btnSize);
         }
 
         // 시작 → 게임 화면으로 전환
         startBtn.addActionListener(e -> startGame());
+
+        // 무기 선택
+        weaponBtn.addActionListener(e -> openWeaponSelectDialog());
 
         // 이어하기 (추후 구현)
         continueBtn.addActionListener(e ->
@@ -281,6 +286,7 @@ public class MainScreen extends JFrame {
         exitBtn.addActionListener(e -> System.exit(0));
 
         buttonPanel.add(startBtn);
+        buttonPanel.add(weaponBtn);
         buttonPanel.add(continueBtn);
         buttonPanel.add(exitBtn);
 
@@ -292,7 +298,7 @@ public class MainScreen extends JFrame {
 
     /** 게임 화면으로 전환 */
     public void startGame() {
-        GamePanel gamePanel = new GamePanel(this);
+        GamePanel gamePanel = new GamePanel(this, selectedWeaponType);  // 선택한 무기 전달
         setContentPane(gamePanel);
 
         setTitle("Vamsur - game");
@@ -307,5 +313,41 @@ public class MainScreen extends JFrame {
     public void returnToMainMenu() {
         setTitle("Vam sur - Main Screen");
         buildMainMenu();
+    }
+
+    /** 무기 선택 다이얼로그 */
+    private void openWeaponSelectDialog() {
+        String[] options = {
+                "Sword - 근거리, 빠른 쿨",
+                "Bow   - 중거리, 투사체",
+                "Staff - 범위 공격"
+        };
+
+        int initialIndex = 0;
+        if (selectedWeaponType == WeaponType.BOW) {
+            initialIndex = 1;
+        } else if (selectedWeaponType == WeaponType.STAFF) {
+            initialIndex = 2;
+        }
+
+        int result = JOptionPane.showOptionDialog(
+                this,
+                "시작 무기를 선택하세요.",
+                "무기 선택",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                options,
+                options[initialIndex]
+        );
+
+        if (result == 0) {
+            selectedWeaponType = WeaponType.SWORD;
+        } else if (result == 1) {
+            selectedWeaponType = WeaponType.BOW;
+        } else if (result == 2) {
+            selectedWeaponType = WeaponType.STAFF;
+        }
+        // 닫기(X) 는 -1 이라서 변경 없음
     }
 }
