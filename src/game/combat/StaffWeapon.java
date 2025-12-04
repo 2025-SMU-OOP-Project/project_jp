@@ -10,24 +10,46 @@ import game.main.GamePanel;
 
 public class StaffWeapon implements Weapon {
 
-    private final int damage = 25;          // 폭발 데미지 (검보다 조금 쎄게)
-    private final int cooldownFrames = 90;  // 느린 쿨
-    private final int explosionRadius = 60; // 폭발 반경
-    private final int maxCastDistance = 400; // 타겟까지 최대 거리
+    private final int baseDamage = 30;
+    private final int baseRadius = 60;
+    private final int maxCastDistance = 600;
 
     @Override
     public int getDamage() {
-        return damage;
+        return baseDamage;
     }
 
     @Override
-    public int getCooldownFrames() {
-        return cooldownFrames;
+    public int getCooldownFrames(Player player) {
+        int level = player.getWeaponUpgradeLevel(WeaponType.STAFF);
+        if (level <= 0) level = 1;
+
+        // Lv1:100, Lv2:90, Lv3:80
+        switch (level) {
+            case 1: return 100;
+            case 2: return 90;
+            case 3: return 80;
+        }
+        return 100;
     }
 
     @Override
     public void attack(GamePanel gp, Player player, List<Monster> monsters) {
-        // 가장 가까운 몬스터 방향으로 파이어볼 발사
+
+        int level = player.getWeaponUpgradeLevel(WeaponType.STAFF);
+        if (level <= 0) level = 1;
+
+        int base = baseDamage + (level - 1) * 10; // 30,40,50
+        double mul = player.getAttackMultiplier();
+        int finalDamage = (int)Math.round(base * mul);
+
+        // 반경: 60 → 100 → 150 (눈에 띄게)
+        int radius;
+        if      (level == 1) radius = baseRadius;
+        else if (level == 2) radius = 100;
+        else                 radius = 150;
+
+        // 1. 사거리 내 가장 가까운 몬스터 탐색
         Monster target = null;
         double bestDist2 = Double.MAX_VALUE;
 
@@ -44,14 +66,14 @@ public class StaffWeapon implements Weapon {
             double dy = my - py;
             double dist2 = dx * dx + dy * dy;
 
-            if (dist2 < bestDist2 && dist2 <= maxCastDistance * maxCastDistance) {
+            if (dist2 < bestDist2 &&
+                dist2 <= maxCastDistance * maxCastDistance) {
                 bestDist2 = dist2;
                 target = m;
             }
         }
 
         if (target == null) {
-            // 사거리 내 몬스터 없으면 발사 안 함
             return;
         }
 
@@ -61,12 +83,12 @@ public class StaffWeapon implements Weapon {
         double dirX = tx - px;
         double dirY = ty - py;
 
-        gp.spawnFireball(px, py, dirX, dirY, damage, explosionRadius);
+        gp.spawnFireball(px, py, dirX, dirY, finalDamage, radius);
     }
 
     @Override
     public void draw(Graphics g, Player player) {
-        // 파이어볼/폭발 그래픽은 FireballProjectile에서 처리하므로 여기선 할 일 없음
+        // 파이어볼/폭발 그래픽은 FireballProjectile이 담당
         g.setColor(Color.WHITE);
     }
 }

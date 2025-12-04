@@ -10,24 +10,39 @@ import game.main.GamePanel;
 
 public class BowWeapon implements Weapon {
 
-    // 중간 쿨타임, 중간 데미지
-    private final int damage = 18;
-    private final int cooldownFrames = 45; // 약 0.75초
-    private final int maxTargetDistance = 500; // 중거리 제한
+    private final int baseDamage = 15;
+    private final int maxTargetDistance = 500;
 
     @Override
     public int getDamage() {
-        return damage;
+        return baseDamage;
     }
 
     @Override
-    public int getCooldownFrames() {
-        return cooldownFrames;
+    public int getCooldownFrames(Player player) {
+        // 쿨타임은 큰 변화 없이 유지 (원하면 레벨에 따라 조금 줄여도 됨)
+        return 45;
     }
 
     @Override
     public void attack(GamePanel gp, Player player, List<Monster> monsters) {
-        // 가장 가까운 몬스터를 찾아 그 방향으로 화살 발사
+
+        // 1. 레벨 기반 스탯 계산
+        int level = player.getWeaponUpgradeLevel(WeaponType.BOW);
+        if (level <= 0) level = 1;
+
+        int base = baseDamage + (level - 1) * 5;      // 15,20,25
+        double mul = player.getAttackMultiplier();
+        int finalDamage = (int)Math.round(base * mul);
+
+        int arrowCount = level;                       // Lv1=1, Lv2=2, Lv3=3
+        int hitsAllowed = 2 + (level - 1);            // 2,3,4
+        double speed;
+        if      (level == 1) speed = 12.0;
+        else if (level == 2) speed = 14.0;
+        else                 speed = 16.0;
+
+        // 2. 타겟 방향 (기본 중심 방향)
         Monster target = null;
         double bestDist2 = Double.MAX_VALUE;
 
@@ -44,14 +59,14 @@ public class BowWeapon implements Weapon {
             double dy = my - py;
             double dist2 = dx * dx + dy * dy;
 
-            if (dist2 < bestDist2 && dist2 <= maxTargetDistance * maxTargetDistance) {
+            if (dist2 < bestDist2 &&
+                dist2 <= maxTargetDistance * maxTargetDistance) {
                 bestDist2 = dist2;
                 target = m;
             }
         }
 
         if (target == null) {
-            // 사거리 안에 몬스터가 없으면 발사 안 함
             return;
         }
 
@@ -61,13 +76,24 @@ public class BowWeapon implements Weapon {
         double dirX = tx - px;
         double dirY = ty - py;
 
-        // 관통 1마리 → 총 2마리까지 맞출 수 있도록 hitsAllowed = 2
-        gp.spawnArrow(px, py, dirX, dirY, damage, 2);
+        // 3. 여러 발 발사 (각도 스프레드)
+        double baseAngle = Math.atan2(dirY, dirX);
+        double spread = Math.toRadians(10); // 화살 간 각도
+
+        int midIndex = arrowCount / 2;
+        for (int i = 0; i < arrowCount; i++) {
+            int offset = i - midIndex; // -1,0,1 ...
+            double angle = baseAngle + offset * spread;
+
+            double dx = Math.cos(angle);
+            double dy = Math.sin(angle);
+
+            gp.spawnArrow(px, py, dx, dy, finalDamage, hitsAllowed, speed);
+        }
     }
 
     @Override
     public void draw(Graphics g, Player player) {
-        // 화살 그래픽은 ArrowProjectile에서 그림
         g.setColor(Color.WHITE);
     }
 }

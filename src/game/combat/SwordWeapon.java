@@ -12,28 +12,54 @@ import game.main.GamePanel;
 
 public class SwordWeapon implements Weapon {
 
-    private final int damage = 20;
-    private final int cooldownFrames = 30;   // 0.5초마다 한 번
-    private final int range = 60;           // 플레이어 주변 사거리(px)
+    // 기본 Stats (레벨 1 기준)
+    private final int baseDamage = 20;
+    private final int baseRange  = 60;   // 지금은 안 써도 놔둬도 됨
 
-    // 간단한 이펙트 표시용
+    @Override
+    public int getDamage() {
+        return baseDamage;
+    }
+
+    @Override
+    public int getCooldownFrames(Player player) {
+        int level = player.getWeaponUpgradeLevel(WeaponType.SWORD);
+        if (level <= 0) level = 1;
+
+        // Lv1: 60, Lv2: 40, Lv3: 25 프레임 (느리 → 빠르게)
+        switch (level) {
+            case 1: return 60;
+            case 2: return 40;
+            case 3: return 25;
+        }
+        return 60;
+    }
+
+    // 이펙트 표시용
     private int effectTimer = 0;
     private final int EFFECT_DURATION = 8;
 
     @Override
-    public int getDamage() {
-        return damage;
-    }
-
-    @Override
-    public int getCooldownFrames() {
-        return cooldownFrames;
-    }
-
-    @Override
     public void attack(GamePanel gp, Player player, List<Monster> monsters) {
 
-        // 플레이어를 중심으로 한 사각형 범위
+        int level = player.getWeaponUpgradeLevel(WeaponType.SWORD);
+        if (level <= 0) level = 1;
+
+        // 데미지: 20, 30, 40
+        int base = baseDamage + (level - 1) * 10;
+
+        // ✅ 범위 크게: Lv1 120, Lv2 170, Lv3 230
+        int range;
+        switch (level) {
+            case 1: range = baseRange; break;
+            case 2: range = 90; break;
+            case 3: range = 130; break;
+            default: range = 120;
+        }
+
+        double mul = player.getAttackMultiplier();
+        int finalDamage = (int)Math.round(base * mul);
+
         Rectangle atkArea = new Rectangle(
                 player.worldX - range,
                 player.worldY - range,
@@ -45,16 +71,15 @@ public class SwordWeapon implements Weapon {
             if (!m.isAlive()) continue;
 
             if (atkArea.intersects(m.getBounds())) {
-                m.takeDamage(damage);
+                m.takeDamage(finalDamage);
                 int screenX = m.worldX - player.worldX + player.screenX;
                 int screenY = m.worldY - player.worldY + player.screenY;
-                gp.addDamageText(screenX, screenY, damage);
-                
-                System.out.println("Sword hit " + m + " for " + damage);
+                gp.addDamageText(screenX, screenY, finalDamage);
+
+                System.out.println("Sword(Lv " + level + ") hit " + m + " for " + finalDamage);
             }
         }
 
-        // 이펙트 표시 시작
         effectTimer = EFFECT_DURATION;
     }
 
@@ -66,6 +91,18 @@ public class SwordWeapon implements Weapon {
         int px = player.screenX;
         int py = player.screenY;
 
+        int level = player.getWeaponUpgradeLevel(WeaponType.SWORD);
+        if (level <= 0) level = 1;
+
+        //  이펙트 원도 같은 range 사용
+        int range;
+        switch (level) {
+            case 1: range = baseRange; break;
+            case 2: range = 90; break;
+            case 3: range = 130; break;
+            default: range = 120;
+        }
+
         int sizeW = player.width + range;
         int sizeH = player.height + range;
 
@@ -76,8 +113,6 @@ public class SwordWeapon implements Weapon {
         g2.drawOval(px - range / 2, py - range / 2, sizeW, sizeH);
 
         g2.dispose();
-
-        // 프레임마다 감소 (GamePanel이 한 프레임 그릴 때마다 호출됨)
         effectTimer--;
     }
 }

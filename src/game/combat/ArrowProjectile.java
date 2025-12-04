@@ -1,7 +1,9 @@
 package game.combat;
 
 import java.awt.*;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import game.entity.monster.Monster;
 import game.entity.player.Player;
@@ -9,9 +11,9 @@ import game.main.GamePanel;
 
 public class ArrowProjectile {
 
-    private double x, y;          // 월드 좌표
-    private double vx, vy;        // 속도 (프레임당 이동량)
-    private final double speed = 12.0;
+    private double x, y;
+    private double vx, vy;
+    private final double speed;         // ← 레벨에 따라 바뀌는 속도
     private final double maxDistance = 500.0;
     private double traveled = 0.0;
 
@@ -19,20 +21,24 @@ public class ArrowProjectile {
     private final int height = 4;
 
     private int damage;
-    private int hitsLeft;         // 관통 가능 횟수 (2면 2마리까지)
+    private int hitsLeft;
 
     private final GamePanel gp;
+
+    private Set<Monster> hitMonsters = new HashSet<>();
 
     public ArrowProjectile(GamePanel gp,
                            double startX, double startY,
                            double dirX, double dirY,
                            int damage,
-                           int hitsAllowed) {
+                           int hitsAllowed,
+                           double speed) {
         this.gp = gp;
         this.x = startX;
         this.y = startY;
         this.damage = damage;
         this.hitsLeft = hitsAllowed;
+        this.speed = speed;
 
         double len = Math.sqrt(dirX * dirX + dirY * dirY);
         if (len == 0) len = 1;
@@ -59,17 +65,18 @@ public class ArrowProjectile {
 
         for (Monster m : monsters) {
             if (!m.isAlive()) continue;
+            if (hitMonsters.contains(m)) continue;
 
             if (arrowRect.intersects(m.getBounds())) {
                 m.takeDamage(damage);
 
-                // 데미지 텍스트
                 int screenX = m.worldX - player.worldX + player.screenX;
                 int screenY = m.worldY - player.worldY + player.screenY;
                 gp.addDamageText(screenX, screenY, damage);
 
-                hitsLeft--;          // 한 마리 맞춤
-                if (hitsLeft <= 0) break; // 관통 횟수 다 쓰면 종료
+                hitMonsters.add(m);
+                hitsLeft--;
+                if (hitsLeft <= 0) break;
             }
         }
     }

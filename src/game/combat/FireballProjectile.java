@@ -12,7 +12,7 @@ public class FireballProjectile {
     private double x, y;
     private double vx, vy;
     private final double speed = 8.0;     // 파이어볼 이동 속도
-    private final double maxDistance = 200.0;	// 날아가는 거리
+    private final double maxDistance = 300.0;	// 날아가는 거리
 
     private double traveled = 0.0;
 
