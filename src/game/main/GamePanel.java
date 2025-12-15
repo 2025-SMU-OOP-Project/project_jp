@@ -1637,7 +1637,6 @@ public class GamePanel extends JPanel implements KeyListener {
     }
     
     public void saveRun() {
-        // 무기 선택 중이거나 게임오버면 저장하지 않음
         if (waitingWeaponSelect) return;
         if (gameState == GameState.GAMEOVER) return;
 
@@ -1655,13 +1654,32 @@ public class GamePanel extends JPanel implements KeyListener {
 
         st.player = player.exportState();
 
+        // 몬스터 저장
+        st.monsters.clear();
+        for (Monster m : monsters) {
+            if (m == null || !m.isAlive()) continue;
+            st.monsters.add(m.exportState());
+        }
+        
+        // ---- exp orb 저장 ----
+        st.expOrbs.clear();
+        for (ExpOrb orb : this.expOrbs) {
+            if (orb == null) continue;
+
+            SaveState.ExpOrbSave os = new SaveState.ExpOrbSave();
+            os.worldX = orb.getWorldX();   // ExpOrb에 getter 없으면 orb.worldX로 바꿔줘
+            os.worldY = orb.getWorldY();
+            os.value  = orb.getValue();
+            st.expOrbs.add(os);
+        }
+
         SaveManager.save(st);
     }
 
     public boolean loadFromSave(SaveState st) {
         if (st == null || !st.valid) return false;
 
-        // 일단 새 플레이어 만들어둔 상태(GamePanel 생성자에서 이미 생성됨)에서 값만 덮어쓰기
+        // 플레이어
         this.player.importState(st.player);
         this.player.updateScreenCenter();
 
@@ -1677,7 +1695,7 @@ public class GamePanel extends JPanel implements KeyListener {
         this.bossKillThreshold = st.bossKillThreshold;
         this.spawnTimer = st.spawnTimer;
 
-        // 이어하기는 이미 진행 중인 판이므로 무기 선택 스킵
+        // 이어하기는 진행 중이므로 무기 선택 스킵
         this.waitingWeaponSelect = false;
         this.weaponSelectPanel.setVisible(false);
 
@@ -1687,14 +1705,32 @@ public class GamePanel extends JPanel implements KeyListener {
         this.enemyProjectiles.clear();
         this.damageTexts.clear();
 
-        // 몬스터/구슬은 “간단 이어하기 버전”으로 초기화(원하면 다음 단계에서 몬스터까지 저장 가능)
+        // 몬스터 복구
         this.monsters.clear();
+        if (st.monsters != null) {
+            for (SaveState.MonsterState ms : st.monsters) {
+                if (ms == null) continue;
+
+                Monster.MonsterKind k = Monster.MonsterKind.valueOf(ms.kind);
+                Image img = getImageForKind(k);
+
+                Monster m = Monster.fromState(ms, img);
+                if (m != null && m.isAlive()) monsters.add(m);
+            }
+        }
+
+        // expOrbs는 일단 초기화(원하면 이것도 저장/복구 가능)
         this.expOrbs.clear();
+        if (st.expOrbs != null) {
+            for (SaveState.ExpOrbSave os : st.expOrbs) {
+                if (os == null) continue;
+                this.expOrbs.add(new ExpOrb(os.worldX, os.worldY, os.value));
+            }
+        }
 
         this.paused = false;
         this.gameState = GameState.RUNNING;
 
-        // UI 표시값도 맞춰주기
         this.uiHpDisplay = player.getCurrentHp();
         double expTarget = 0.0;
         if (player.getExpToNextLevel() > 0) {

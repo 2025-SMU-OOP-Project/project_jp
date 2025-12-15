@@ -97,9 +97,8 @@ public class FireballProjectile {
         for (Monster m : monsters) {
             if (m == null || !m.isAlive()) continue;
 
-            Rectangle hb = m.getBounds();
-            int mx = hb.x + hb.width / 2;
-            int my = hb.y + hb.height / 2;
+            int mx = m.getHitCenterX();
+            int my = m.getHitCenterY();
 
             int dx = mx - cx;
             int dy = my - cy;

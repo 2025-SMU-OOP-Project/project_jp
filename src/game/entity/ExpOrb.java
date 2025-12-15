@@ -104,4 +104,7 @@ public class ExpOrb {
 
         g2.dispose();
     }
+    
+    public int getWorldX() { return (int)Math.round(x); }
+    public int getWorldY() { return (int)Math.round(y); }
 }

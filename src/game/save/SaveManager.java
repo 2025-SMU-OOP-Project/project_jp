@@ -4,28 +4,25 @@ import java.io.*;
 
 public class SaveManager {
 
-    private static File getSaveFile() {
-        String home = System.getProperty("user.home");
-        return new File(home, ".vamsur_save.dat");
-    }
+    private static final String SAVE_FILE = "save.dat";
 
     public static boolean hasSave() {
-        File f = getSaveFile();
+        File f = new File(SAVE_FILE);
         return f.exists() && f.isFile() && f.length() > 0;
     }
 
     public static void clearSave() {
-        File f = getSaveFile();
-        if (f.exists()) f.delete();
+        File f = new File(SAVE_FILE);
+        if (f.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+        }
     }
 
-    public static boolean save(SaveState state) {
-        if (state == null) return false;
-        File f = getSaveFile();
-
-        try (ObjectOutputStream oos = new ObjectOutputStream(
-                new BufferedOutputStream(new FileOutputStream(f)))) {
-            oos.writeObject(state);
+    public static boolean save(SaveState st) {
+        if (st == null) return false;
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(SAVE_FILE))) {
+            oos.writeObject(st);
             oos.flush();
             return true;
         } catch (Exception e) {
@@ -35,13 +32,12 @@ public class SaveManager {
     }
 
     public static SaveState load() {
-        File f = getSaveFile();
         if (!hasSave()) return null;
-
-        try (ObjectInputStream ois = new ObjectInputStream(
-                new BufferedInputStream(new FileInputStream(f)))) {
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(SAVE_FILE))) {
             Object obj = ois.readObject();
-            if (obj instanceof SaveState) return (SaveState) obj;
+            if (obj instanceof SaveState) {
+                return (SaveState) obj;
+            }
             return null;
         } catch (Exception e) {
             e.printStackTrace();

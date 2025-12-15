@@ -323,4 +323,63 @@ public class Monster {
 
     public int getCurrentHp() { return currentHp; }
     public int getMaxHp()     { return maxHp; }
+    
+ // ====== 저장용 ======
+    public game.save.SaveState.MonsterState exportState() {
+        game.save.SaveState.MonsterState ms = new game.save.SaveState.MonsterState();
+
+        ms.worldX = this.worldX;
+        ms.worldY = this.worldY;
+        ms.width = this.width;
+        ms.height = this.height;
+
+        ms.kind = this.kind.name();
+        ms.difficultyStage = this.difficultyStage;
+
+        ms.currentHp = this.currentHp;
+        ms.maxHp = this.maxHp;
+
+        ms.damage = this.damage;
+        ms.speed = this.speed;
+
+        ms.dashCooldown = this.dashCooldown;
+        ms.dashTimer = this.dashTimer;
+        ms.dashDirX = this.dashDirX;
+        ms.dashDirY = this.dashDirY;
+
+        ms.shootCooldown = this.shootCooldown;
+
+        return ms;
+    }
+
+    // ====== 로드용(팩토리) ======
+    public static Monster fromState(game.save.SaveState.MonsterState ms, Image img) {
+        if (ms == null) return null;
+
+        MonsterKind k = MonsterKind.valueOf(ms.kind);
+
+        Monster m = new Monster(ms.worldX, ms.worldY, img, k, ms.difficultyStage);
+
+        // 생성자에서 기본값 세팅하므로, 저장된 값으로 덮어쓰기
+        m.width = ms.width;
+        m.height = ms.height;
+
+        m.maxHp = ms.maxHp;
+        m.currentHp = Math.min(ms.currentHp, m.maxHp);
+
+        m.damage = ms.damage;
+        m.speed = ms.speed;
+
+        m.dashCooldown = ms.dashCooldown;
+        m.dashTimer = ms.dashTimer;
+        m.dashDirX = ms.dashDirX;
+        m.dashDirY = ms.dashDirY;
+
+        m.shootCooldown = ms.shootCooldown;
+
+        // 히트박스는 사이즈 기반이라 다시 세팅
+        m.setupHitboxByKind();
+
+        return m;
+    }
 }

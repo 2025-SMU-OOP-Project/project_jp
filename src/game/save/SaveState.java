@@ -9,20 +9,20 @@ import game.combat.WeaponType;
 public class SaveState implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    // 유효한 세이브인지 체크용
     public boolean valid = false;
 
-    // 진행
-    public int killCount;
-    public int elapsedPlaySec;
+    // ---- 런/시간 ----
+    public int killCount = 0;
+    public int elapsedPlaySec = 0;
 
-    public int eliteTimer;
-    public int nonBossKillCount;
-    public boolean bossAlive;
-    public int bossKillThreshold;
-    public int spawnTimer;
+    // ---- 스폰/보스 상태 ----
+    public int eliteTimer = 0;
+    public int nonBossKillCount = 0;
+    public boolean bossAlive = false;
+    public int bossKillThreshold = 50;
+    public int spawnTimer = 0;
 
-    // 플레이어
+    // ---- 플레이어 ----
     public PlayerState player = new PlayerState();
 
     public static class PlayerState implements Serializable {
@@ -50,4 +50,37 @@ public class SaveState implements Serializable {
         public WeaponType type;
         public int level;
     }
+
+    // ---- 몬스터 ----
+    public List<MonsterState> monsters = new ArrayList<>();
+
+    public static class MonsterState implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        public int worldX, worldY;
+        public int width, height;
+
+        public String kind;        // MonsterKind name()
+        public int difficultyStage;
+
+        public int currentHp;
+        public int maxHp;
+
+        public int damage;
+        public int speed;
+
+        public int dashCooldown;
+        public int dashTimer;
+        public int dashDirX, dashDirY;
+
+        public int shootCooldown;
+    }
+    
+    // ---- 경험치 구슬(ExpOrb) ----
+    public static class ExpOrbSave implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public int worldX, worldY;
+        public int value;
+    }
+    public List<ExpOrbSave> expOrbs = new ArrayList<>();
 }

@@ -18,7 +18,7 @@ public class MainScreen extends JFrame {
             super(text);
 
             setFocusPainted(false);
-            setContentAreaFilled(false);  // 우리가 직접 배경 그림
+            setContentAreaFilled(false);
             setBorderPainted(false);
             setOpaque(false);
 
@@ -31,14 +31,12 @@ public class MainScreen extends JFrame {
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                    RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             int w = getWidth();
             int h = getHeight();
             int arc = 24;
 
-            // 배경 그라데이션
             Color top, bottom;
             if (hover) {
                 top = new Color(255, 255, 255, 230);
@@ -52,11 +50,9 @@ public class MainScreen extends JFrame {
             Shape rect = new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc);
             g2.fill(rect);
 
-            // 외곽선
             g2.setColor(new Color(180, 180, 180, 220));
             g2.draw(rect);
 
-            // 텍스트
             g2.setFont(getFont());
             FontMetrics fm = g2.getFontMetrics();
             String text = getText();
@@ -83,9 +79,7 @@ public class MainScreen extends JFrame {
         private Image bgImage;
 
         public BackgroundPanel() {
-            bgImage = new ImageIcon(
-                    getClass().getResource("/images/main_background.png")
-            ).getImage();
+            bgImage = new ImageIcon(getClass().getResource("/images/main_background.png")).getImage();
         }
 
         @Override
@@ -138,13 +132,7 @@ public class MainScreen extends JFrame {
             p.alpha = 1.0f;
             p.vy = 1.0f + rand.nextFloat() * 1.5f;
 
-            p.color = new Color(
-                    255,
-                    100 + rand.nextInt(100),
-                    0,
-                    180 + rand.nextInt(75)
-            );
-
+            p.color = new Color(255, 100 + rand.nextInt(100), 0, 180 + rand.nextInt(75));
             particles.add(p);
         }
 
@@ -153,10 +141,7 @@ public class MainScreen extends JFrame {
                 FlameParticle p = particles.get(i);
                 p.y -= p.vy;
                 p.alpha -= 0.04f;
-
-                if (p.alpha <= 0) {
-                    particles.remove(i);
-                }
+                if (p.alpha <= 0) particles.remove(i);
             }
         }
 
@@ -164,8 +149,7 @@ public class MainScreen extends JFrame {
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
             Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                    RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             int w = getWidth();
             int h = getHeight();
@@ -177,6 +161,7 @@ public class MainScreen extends JFrame {
             Font baseFont = new Font("Serif", Font.BOLD, 60);
             Font font = baseFont.deriveFont(fontSize);
             g2.setFont(font);
+
             FontMetrics fm = g2.getFontMetrics();
             int textWidth = fm.stringWidth(text);
             int textHeight = fm.getAscent();
@@ -184,18 +169,15 @@ public class MainScreen extends JFrame {
             int x = (w - textWidth) / 2;
             int y = h / 2 + textHeight / 2 + yOffset;
 
-            // 글로우
             for (int i = 6; i > 0; i--) {
                 float alpha = 0.07f * i;
                 g2.setColor(new Color(255, 140, 0, (int)(alpha * 255)));
                 g2.drawString(text, x, y - i * 2);
             }
 
-            // 그림자
             g2.setColor(new Color(0, 0, 0, 160));
             g2.drawString(text, x + 4, y + 4);
 
-            // 본 텍스트
             GradientPaint gp = new GradientPaint(
                     x, y - textHeight,
                     new Color(255, 120, 0),
@@ -205,7 +187,6 @@ public class MainScreen extends JFrame {
             g2.setPaint(gp);
             g2.drawString(text, x, y);
 
-            // 파티클
             for (FlameParticle p : particles) {
                 g2.setColor(new Color(
                         p.color.getRed(),
@@ -213,7 +194,6 @@ public class MainScreen extends JFrame {
                         p.color.getBlue(),
                         (int)(p.alpha * 255)
                 ));
-
                 int size = (int)p.size;
                 g2.fillOval(p.x, p.y, size, size);
             }
@@ -222,7 +202,6 @@ public class MainScreen extends JFrame {
         }
     }
 
-    // ===== 메인 스크린 =====
     public MainScreen() {
         setTitle("Vam sur - Main Screen");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -231,21 +210,17 @@ public class MainScreen extends JFrame {
         setResizable(true);
 
         buildMainMenu();
-
         setVisible(true);
     }
 
-    /** 메인 메뉴 UI 생성 */
     private void buildMainMenu() {
         BackgroundPanel bgPanel = new BackgroundPanel();
         bgPanel.setLayout(new BorderLayout());
         setContentPane(bgPanel);
 
-        // 애니메이션 타이틀
         AnimatedTitlePanel titlePanel = new AnimatedTitlePanel();
         bgPanel.add(titlePanel, BorderLayout.NORTH);
 
-        // 버튼 영역
         JPanel buttonPanel = new JPanel();
         buttonPanel.setOpaque(false);
         buttonPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 40, 30));
@@ -256,22 +231,28 @@ public class MainScreen extends JFrame {
         GameButton continueBtn = new GameButton("이어하기");
         GameButton exitBtn     = new GameButton("종료");
 
-        GameButton[] btnArr = {startBtn, continueBtn, exitBtn};
-        for (GameButton btn : btnArr) {
+        for (GameButton btn : new GameButton[]{startBtn, continueBtn, exitBtn}) {
             btn.setPreferredSize(btnSize);
         }
 
-        // 시작 → 무기 선택 → 게임 시작
         startBtn.addActionListener(e -> {
             SaveManager.clearSave();
             startGame();
         });
 
-        // 이어하기 (임시)
-        continueBtn.setEnabled(SaveManager.hasSave());
-        continueBtn.addActionListener(e -> startContinueGame());
+        continueBtn.setEnabled(true); // 항상 누를 수 있게
 
-        // 종료
+        continueBtn.addActionListener(e -> {
+            if (!SaveManager.hasSave()) {
+                JOptionPane.showMessageDialog(
+                        MainScreen.this,
+                        "이어하기할 정보가 없습니다."
+                );
+                return;
+            }
+            startContinueGame();
+        });
+
         exitBtn.addActionListener(e -> System.exit(0));
 
         buttonPanel.add(startBtn);
@@ -284,7 +265,6 @@ public class MainScreen extends JFrame {
         repaint();
     }
 
-    /** 게임 화면으로 전환 (무기 선택 포함) */
     public void startGame() {
         GamePanel gamePanel = new GamePanel(this);
         setContentPane(gamePanel);
@@ -296,13 +276,11 @@ public class MainScreen extends JFrame {
         gamePanel.requestFocusInWindow();
         gamePanel.startGameLoop();
     }
+
     public void startContinueGame() {
         SaveState st = SaveManager.load();
         if (st == null || !st.valid) {
-            JOptionPane.showMessageDialog(
-                    MainScreen.this,
-                    "이어하기 데이터가 없습니다."
-            );
+            JOptionPane.showMessageDialog(this, "이어하기 데이터가 없습니다.");
             SaveManager.clearSave();
             buildMainMenu();
             return;
@@ -316,10 +294,7 @@ public class MainScreen extends JFrame {
 
         boolean ok = gamePanel.loadFromSave(st);
         if (!ok) {
-            JOptionPane.showMessageDialog(
-                    MainScreen.this,
-                    "이어하기 데이터를 불러오지 못했습니다."
-            );
+            JOptionPane.showMessageDialog(this, "이어하기 데이터를 불러오지 못했습니다.");
             SaveManager.clearSave();
             buildMainMenu();
             return;
@@ -329,10 +304,8 @@ public class MainScreen extends JFrame {
         gamePanel.startGameLoop();
     }
 
-    /** 게임 도중 메인 메뉴로 복귀 */
     public void returnToMainMenu() {
         setTitle("Vam sur - Main Screen");
         buildMainMenu();
     }
 }
-
