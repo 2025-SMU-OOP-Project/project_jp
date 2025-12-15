@@ -24,11 +24,13 @@ public class StaffWeapon implements Weapon {
         int level = player.getWeaponUpgradeLevel(WeaponType.STAFF);
         if (level <= 0) level = 1;
 
-        // Lv1:100, Lv2:90, Lv3:80
+        // Lv1:100, Lv2:90, Lv3:80, Lv4:70, Lv5:60
         switch (level) {
             case 1: return 100;
             case 2: return 90;
             case 3: return 80;
+            case 4: return 70;
+            case 5: return 60;
         }
         return 100;
     }
@@ -38,18 +40,33 @@ public class StaffWeapon implements Weapon {
 
         int level = player.getWeaponUpgradeLevel(WeaponType.STAFF);
         if (level <= 0) level = 1;
+        if (level > 5) level = 5;
 
-        int base = baseDamage + (level - 1) * 10; // 30,40,50
+        // 데미지: 30, 40, 50, 65, 80
+        int base;
+        switch (level) {
+            case 1: base = 30; break;
+            case 2: base = 40; break;
+            case 3: base = 50; break;
+            case 4: base = 65; break;
+            case 5: base = 80; break;
+            default: base = baseDamage;
+        }
+
         double mul = player.getAttackMultiplier();
         int finalDamage = (int)Math.round(base * mul);
 
-        // 반경: 60 → 100 → 150 (눈에 띄게)
+        // 반경: 60, 100, 150, 200, 260
         int radius;
-        if      (level == 1) radius = baseRadius;
-        else if (level == 2) radius = 100;
-        else                 radius = 150;
+        switch (level) {
+            case 1: radius = baseRadius; break;
+            case 2: radius = 100; break;
+            case 3: radius = 140; break;
+            case 4: radius = 180; break;
+            case 5: radius = 230; break;
+            default: radius = baseRadius;
+        }
 
-        // 1. 사거리 내 가장 가까운 몬스터 탐색
         Monster target = null;
         double bestDist2 = Double.MAX_VALUE;
 
@@ -73,9 +90,7 @@ public class StaffWeapon implements Weapon {
             }
         }
 
-        if (target == null) {
-            return;
-        }
+        if (target == null) return;
 
         int tx = target.worldX + target.width / 2;
         int ty = target.worldY + target.height / 2;
@@ -88,7 +103,6 @@ public class StaffWeapon implements Weapon {
 
     @Override
     public void draw(Graphics g, Player player) {
-        // 파이어볼/폭발 그래픽은 FireballProjectile이 담당
         g.setColor(Color.WHITE);
     }
 }

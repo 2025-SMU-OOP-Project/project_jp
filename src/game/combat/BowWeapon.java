@@ -20,29 +20,59 @@ public class BowWeapon implements Weapon {
 
     @Override
     public int getCooldownFrames(Player player) {
-        // 쿨타임은 큰 변화 없이 유지 (원하면 레벨에 따라 조금 줄여도 됨)
+        int level = player.getWeaponUpgradeLevel(WeaponType.BOW);
+        if (level <= 0) level = 1;
+        if (level > 5) level = 5;
+
+        // Lv1:45, Lv2:42, Lv3:39, Lv4:36, Lv5:33
+        switch (level) {
+            case 1: return 45;
+            case 2: return 42;
+            case 3: return 39;
+            case 4: return 36;
+            case 5: return 33;
+        }
         return 45;
     }
 
     @Override
     public void attack(GamePanel gp, Player player, List<Monster> monsters) {
 
-        // 1. 레벨 기반 스탯 계산
         int level = player.getWeaponUpgradeLevel(WeaponType.BOW);
         if (level <= 0) level = 1;
+        if (level > 5) level = 5;
 
-        int base = baseDamage + (level - 1) * 5;      // 15,20,25
+        // 데미지: 15, 20, 25, 33, 42
+        int base;
+        switch (level) {
+            case 1: base = 15; break;
+            case 2: base = 20; break;
+            case 3: base = 25; break;
+            case 4: base = 33; break;
+            case 5: base = 42; break;
+            default: base = baseDamage;
+        }
+
         double mul = player.getAttackMultiplier();
         int finalDamage = (int)Math.round(base * mul);
 
-        int arrowCount = level;                       // Lv1=1, Lv2=2, Lv3=3
-        int hitsAllowed = 2 + (level - 1);            // 2,3,4
-        double speed;
-        if      (level == 1) speed = 12.0;
-        else if (level == 2) speed = 14.0;
-        else                 speed = 16.0;
+        // 화살 수: 1,2,3,4,5
+        int arrowCount = level;
 
-        // 2. 타겟 방향 (기본 중심 방향)
+        // 관통 횟수(맞출 수 있는 몬스터 수): 2,3,4,5,6
+        int hitsAllowed = 2 + (level - 1);
+
+        // 속도: 12,14,16,18,20
+        double speed;
+        switch (level) {
+            case 1: speed = 12.0; break;
+            case 2: speed = 14.0; break;
+            case 3: speed = 16.0; break;
+            case 4: speed = 18.0; break;
+            case 5: speed = 20.0; break;
+            default: speed = 12.0;
+        }
+
         Monster target = null;
         double bestDist2 = Double.MAX_VALUE;
 
@@ -66,9 +96,7 @@ public class BowWeapon implements Weapon {
             }
         }
 
-        if (target == null) {
-            return;
-        }
+        if (target == null) return;
 
         int tx = target.worldX + target.width / 2;
         int ty = target.worldY + target.height / 2;
@@ -76,13 +104,14 @@ public class BowWeapon implements Weapon {
         double dirX = tx - px;
         double dirY = ty - py;
 
-        // 3. 여러 발 발사 (각도 스프레드)
         double baseAngle = Math.atan2(dirY, dirX);
-        double spread = Math.toRadians(10); // 화살 간 각도
+
+        // 발수가 많아질수록 살짝만 벌어지도록 감소
+        double spread = Math.toRadians(10);
 
         int midIndex = arrowCount / 2;
         for (int i = 0; i < arrowCount; i++) {
-            int offset = i - midIndex; // -1,0,1 ...
+            int offset = i - midIndex;
             double angle = baseAngle + offset * spread;
 
             double dx = Math.cos(angle);

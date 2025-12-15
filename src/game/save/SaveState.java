@@ -63,6 +63,10 @@ public class SaveState implements Serializable {
         public String kind;        // MonsterKind name()
         public int difficultyStage;
 
+        // 추가: 등급(엘리트/보스)
+        public boolean elite;
+        public boolean boss;
+
         public int currentHp;
         public int maxHp;
 
@@ -75,7 +79,7 @@ public class SaveState implements Serializable {
 
         public int shootCooldown;
     }
-    
+
     // ---- 경험치 구슬(ExpOrb) ----
     public static class ExpOrbSave implements Serializable {
         private static final long serialVersionUID = 1L;

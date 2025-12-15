@@ -18,7 +18,6 @@ import game.entity.monster.EnemyProjectile;
 import game.save.SaveManager;
 import game.save.SaveState;
 
-
 public class GamePanel extends JPanel implements KeyListener {
 
     private final int SCREEN_WIDTH  = 800;
@@ -70,7 +69,7 @@ public class GamePanel extends JPanel implements KeyListener {
     private Random rand = new Random();
     private int spawnTimer = 0;
     private final int SPAWN_INTERVAL = 60;
-    
+
     private int autosaveCounter = 0;
     private final int AUTOSAVE_INTERVAL_SEC = 10;
 
@@ -97,7 +96,7 @@ public class GamePanel extends JPanel implements KeyListener {
         String title;
         String desc;
     }
-    
+
     private void resetBestRecord() {
         bestScore = 0;
         bestKills = 0;
@@ -305,7 +304,7 @@ public class GamePanel extends JPanel implements KeyListener {
                         spawnSplitChildren(m, difficultyStage);
                     }
 
-                    if (m.getKind() == Monster.MonsterKind.BOSS) {
+                    if (m.isBoss()) {
                         bossAlive = false;
                         nonBossKillCount = 0;
                         bossKillThreshold += 20;
@@ -391,13 +390,19 @@ public class GamePanel extends JPanel implements KeyListener {
             double hpTarget = player.getCurrentHp();
             uiHpDisplay += (hpTarget - uiHpDisplay) * 0.15;
 
-            double expTarget = 0.0;
-            if (player.getExpToNextLevel() > 0) {
-                expTarget = (double) player.getCurrentExp() / player.getExpToNextLevel();
+            double expTarget;
+            if (player.getLevel() >= player.getMaxLevel()) {
+                expTarget = 1.0; // 만렙이면 EXP바 항상 풀
+            } else {
+                expTarget = 0.0;
+                if (player.getExpToNextLevel() > 0) {
+                    expTarget = (double) player.getCurrentExp() / player.getExpToNextLevel();
+                }
+                if (expTarget < 0.0) expTarget = 0.0;
+                if (expTarget > 1.0) expTarget = 1.0;
             }
             uiExpDisplay += (expTarget - uiExpDisplay) * 0.25;
 
-            // 자동 저장 (10초마다)
             autosaveCounter++;
             if (autosaveCounter >= AUTOSAVE_INTERVAL_SEC * FPS) {
                 saveRun();
@@ -433,7 +438,7 @@ public class GamePanel extends JPanel implements KeyListener {
             int spawnX = player.worldX + rand.nextInt(1600) - 800;
             int spawnY = player.worldY + rand.nextInt(1200) - 600;
 
-            monsters.add(new Monster(spawnX, spawnY, img, kind, difficultyStage));
+            monsters.add(new Monster(spawnX, spawnY, img, kind, difficultyStage, false, false));
         }
     }
 
@@ -443,25 +448,38 @@ public class GamePanel extends JPanel implements KeyListener {
             case DASHER:      return dogImg;
             case SPLITTER:    return slimeImg;
             case SPLIT_CHILD: return slimeImg;
-            case NORMAL:      return mummyImg;
-            case ELITE:       return mummyImg;
-            case BOSS:        return mummyImg;
+            case NORMAL:
             default:          return mummyImg;
         }
+    }
+
+    private Monster.MonsterKind rollBaseKindForEliteBoss(int difficultyStage) {
+        int r = rand.nextInt(100);
+
+        if (difficultyStage >= 3 && r < 25) return Monster.MonsterKind.SPLITTER;
+        if (difficultyStage >= 2 && r < 55) return Monster.MonsterKind.SHOOTER;
+        if (difficultyStage >= 1 && r < 80) return Monster.MonsterKind.DASHER;
+        return Monster.MonsterKind.NORMAL;
     }
 
     private void spawnEliteMonster(int difficultyStage) {
         int spawnX = player.worldX + rand.nextInt(1600) - 800;
         int spawnY = player.worldY + rand.nextInt(1200) - 600;
-        monsters.add(new Monster(spawnX, spawnY, getImageForKind(Monster.MonsterKind.ELITE),
-                Monster.MonsterKind.ELITE, difficultyStage));
+
+        Monster.MonsterKind base = rollBaseKindForEliteBoss(difficultyStage);
+        Image img = getImageForKind(base);
+
+        monsters.add(new Monster(spawnX, spawnY, img, base, difficultyStage, true, false));
     }
 
     private void spawnBossMonster(int difficultyStage) {
         int spawnX = player.worldX + rand.nextInt(800) - 400;
         int spawnY = player.worldY + rand.nextInt(600) - 300;
-        monsters.add(new Monster(spawnX, spawnY, getImageForKind(Monster.MonsterKind.BOSS),
-                Monster.MonsterKind.BOSS, difficultyStage));
+
+        Monster.MonsterKind base = rollBaseKindForEliteBoss(difficultyStage);
+        Image img = getImageForKind(base);
+
+        monsters.add(new Monster(spawnX, spawnY, img, base, difficultyStage, false, true));
     }
 
     private void spawnSplitChildren(Monster parent, int difficultyStage) {
@@ -470,8 +488,8 @@ public class GamePanel extends JPanel implements KeyListener {
 
         Image img = getImageForKind(Monster.MonsterKind.SPLIT_CHILD);
 
-        pendingMonstersToAdd.add(new Monster(x - 12, y - 12, img, Monster.MonsterKind.SPLIT_CHILD, difficultyStage));
-        pendingMonstersToAdd.add(new Monster(x + 12, y + 12, img, Monster.MonsterKind.SPLIT_CHILD, difficultyStage));
+        pendingMonstersToAdd.add(new Monster(x - 12, y - 12, img, Monster.MonsterKind.SPLIT_CHILD, difficultyStage, false, false));
+        pendingMonstersToAdd.add(new Monster(x + 12, y + 12, img, Monster.MonsterKind.SPLIT_CHILD, difficultyStage, false, false));
     }
 
     private void spawnExpOrb(Monster m) {
@@ -507,7 +525,7 @@ public class GamePanel extends JPanel implements KeyListener {
     }
 
     private void handleLevelUp() {
-        if (player.getLevel() >= player.getMaxLevel()) return;
+        if (player.getLevel() > player.getMaxLevel()) return;
 
         player.healToFull();
 
@@ -756,7 +774,12 @@ public class GamePanel extends JPanel implements KeyListener {
         g2.setColor(new Color(0, 0, 0, 180));
         g2.drawRoundRect(barAreaX, expBarY, barW, 10, 10, 10);
 
-        String expText = curExp + " / " + nextExp;
+        String expText;
+        if (player.getLevel() >= player.getMaxLevel()) {
+            expText = "MAX";
+        } else {
+            expText = curExp + " / " + nextExp;
+        }
         FontMetrics fmExp = g2.getFontMetrics();
         int expTw = fmExp.stringWidth(expText);
 
@@ -806,10 +829,17 @@ public class GamePanel extends JPanel implements KeyListener {
             g2.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
 
             g2.setColor(Color.WHITE);
+            String expStatusText;
+            if (player.getLevel() >= player.getMaxLevel()) {
+                expStatusText = "EXP MAX";
+            } else {
+                expStatusText = "EXP " + player.getCurrentExp() + "/" + player.getExpToNextLevel();
+            }
+
             g2.drawString(
-                    "Lv " + player.getLevel() +
-                            "   EXP " + player.getCurrentExp() + "/" + player.getExpToNextLevel(),
-                    panelX + 18, y);
+                "Lv " + player.getLevel() + "   " + expStatusText,
+                panelX + 18, y
+            );
 
             y += 18;
 
@@ -836,10 +866,9 @@ public class GamePanel extends JPanel implements KeyListener {
             g2.drawString("[TAB] : 상태 보기",
                     hudX + 20, hudY + hudH + 14);
         }
-        
-        // ===== 오른쪽 위 : 최고 기록 HUD =====
+
         int bestBoxW = 220;
-        int bestBoxH = 72; // Best + Score 2줄
+        int bestBoxH = 72;
         int bestBoxX = getWidth() - bestBoxW - 14;
         int bestBoxY = 14;
 
@@ -858,10 +887,8 @@ public class GamePanel extends JPanel implements KeyListener {
         g2.setStroke(new BasicStroke(2f));
         g2.draw(bestRect);
 
-        // 폰트
         g2.setFont(new Font("맑은 고딕", Font.BOLD, 16));
 
-        // ===== Best =====
         g2.setColor(new Color(255, 210, 120));
         String bestText = "Best: " + bestScore;
         FontMetrics fmBest = g2.getFontMetrics();
@@ -872,7 +899,6 @@ public class GamePanel extends JPanel implements KeyListener {
 
         g2.drawString(bestText, txBest, tyBest);
 
-        // ===== 현재 점수 (실시간) =====
         int currentScore = calcScore(killCount, getElapsedPlaySec());
 
         g2.setColor(new Color(220, 220, 220));
@@ -910,8 +936,7 @@ public class GamePanel extends JPanel implements KeyListener {
                 resumeGame();
             }
         }
-        
-        // 디버그용 최고기록 초기화
+
         if (code == KeyEvent.VK_F9) {
             resetBestRecord();
             repaint();
@@ -1635,7 +1660,7 @@ public class GamePanel extends JPanel implements KeyListener {
         bestKills = prefs.getInt("bestKills", 0);
         bestTimeSec = prefs.getInt("bestTimeSec", 0);
     }
-    
+
     public void saveRun() {
         if (waitingWeaponSelect) return;
         if (gameState == GameState.GAMEOVER) return;
@@ -1654,20 +1679,18 @@ public class GamePanel extends JPanel implements KeyListener {
 
         st.player = player.exportState();
 
-        // 몬스터 저장
         st.monsters.clear();
         for (Monster m : monsters) {
             if (m == null || !m.isAlive()) continue;
             st.monsters.add(m.exportState());
         }
-        
-        // ---- exp orb 저장 ----
+
         st.expOrbs.clear();
         for (ExpOrb orb : this.expOrbs) {
             if (orb == null) continue;
 
             SaveState.ExpOrbSave os = new SaveState.ExpOrbSave();
-            os.worldX = orb.getWorldX();   // ExpOrb에 getter 없으면 orb.worldX로 바꿔줘
+            os.worldX = orb.getWorldX();
             os.worldY = orb.getWorldY();
             os.value  = orb.getValue();
             st.expOrbs.add(os);
@@ -1679,13 +1702,11 @@ public class GamePanel extends JPanel implements KeyListener {
     public boolean loadFromSave(SaveState st) {
         if (st == null || !st.valid) return false;
 
-        // 플레이어
         this.player.importState(st.player);
         this.player.updateScreenCenter();
 
         this.killCount = st.killCount;
 
-        // 시간 복원
         this.playAccumNano = (long) st.elapsedPlaySec * 1_000_000_000L;
         this.playResumeNano = 0L;
 
@@ -1695,23 +1716,33 @@ public class GamePanel extends JPanel implements KeyListener {
         this.bossKillThreshold = st.bossKillThreshold;
         this.spawnTimer = st.spawnTimer;
 
-        // 이어하기는 진행 중이므로 무기 선택 스킵
         this.waitingWeaponSelect = false;
         this.weaponSelectPanel.setVisible(false);
 
-        // 투사체/이펙트는 로드시 초기화(안전)
         this.arrows.clear();
         this.fireballs.clear();
         this.enemyProjectiles.clear();
         this.damageTexts.clear();
 
-        // 몬스터 복구
         this.monsters.clear();
         if (st.monsters != null) {
             for (SaveState.MonsterState ms : st.monsters) {
                 if (ms == null) continue;
 
-                Monster.MonsterKind k = Monster.MonsterKind.valueOf(ms.kind);
+                boolean elite = ms.elite;
+                boolean boss  = ms.boss;
+
+                Monster.MonsterKind k;
+                if ("ELITE".equals(ms.kind)) {
+                    k = Monster.MonsterKind.NORMAL;
+                    elite = true;
+                } else if ("BOSS".equals(ms.kind)) {
+                    k = Monster.MonsterKind.SHOOTER;
+                    boss = true;
+                } else {
+                    k = Monster.MonsterKind.valueOf(ms.kind);
+                }
+
                 Image img = getImageForKind(k);
 
                 Monster m = Monster.fromState(ms, img);
@@ -1719,7 +1750,6 @@ public class GamePanel extends JPanel implements KeyListener {
             }
         }
 
-        // expOrbs는 일단 초기화(원하면 이것도 저장/복구 가능)
         this.expOrbs.clear();
         if (st.expOrbs != null) {
             for (SaveState.ExpOrbSave os : st.expOrbs) {
@@ -1732,9 +1762,17 @@ public class GamePanel extends JPanel implements KeyListener {
         this.gameState = GameState.RUNNING;
 
         this.uiHpDisplay = player.getCurrentHp();
-        double expTarget = 0.0;
-        if (player.getExpToNextLevel() > 0) {
-            expTarget = (double) player.getCurrentExp() / player.getExpToNextLevel();
+
+        double expTarget;
+        if (player.getLevel() >= player.getMaxLevel()) {
+            expTarget = 1.0;
+        } else {
+            expTarget = 0.0;
+            if (player.getExpToNextLevel() > 0) {
+                expTarget = (double) player.getCurrentExp() / player.getExpToNextLevel();
+            }
+            if (expTarget < 0.0) expTarget = 0.0;
+            if (expTarget > 1.0) expTarget = 1.0;
         }
         this.uiExpDisplay = expTarget;
 
@@ -1748,7 +1786,7 @@ public class GamePanel extends JPanel implements KeyListener {
     }
 
     private void triggerGameOver() {
-    	SaveManager.clearSave();
+        SaveManager.clearSave();
         paused = true;
         gameState = GameState.GAMEOVER;
         showStatusPanel = false;
@@ -1821,5 +1859,3 @@ public class GamePanel extends JPanel implements KeyListener {
     public int getScreenWidth()  { return SCREEN_WIDTH; }
     public int getScreenHeight() { return SCREEN_HEIGHT; }
 }
-
-

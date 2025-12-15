@@ -40,7 +40,7 @@ public class Player {
 
     // ====== 레벨 / 경험치 ======
     private int level = 1;
-    private final int maxLevel = 20;
+    private final int maxLevel = 50;
     private int currentExp = 0;
     private int expToNextLevel = 50;
 
@@ -220,7 +220,7 @@ public class Player {
     public boolean canUpgradeWeapon(WeaponType type) {
         for (OwnedWeapon ow : ownedWeapons) {
             if (ow.type == type) {
-                return ow.level < 3; // 최대 3단계
+                return ow.level < 5; // 최대 5단계
             }
         }
         // 아직 없으면 얻을 수 있음
@@ -238,7 +238,7 @@ public class Player {
     public void addOrUpgradeWeapon(WeaponType type) {
         for (OwnedWeapon ow : ownedWeapons) {
             if (ow.type == type) {
-                if (ow.level < 3) {
+                if (ow.level < 5) {
                     ow.level++;
                 }
                 return;

@@ -12,9 +12,8 @@ import game.main.GamePanel;
 
 public class SwordWeapon implements Weapon {
 
-    // 기본 Stats (레벨 1 기준)
     private final int baseDamage = 20;
-    private final int baseRange  = 60;   // 지금은 안 써도 놔둬도 됨
+    private final int baseRange  = 60;
 
     @Override
     public int getDamage() {
@@ -26,16 +25,17 @@ public class SwordWeapon implements Weapon {
         int level = player.getWeaponUpgradeLevel(WeaponType.SWORD);
         if (level <= 0) level = 1;
 
-        // Lv1: 60, Lv2: 40, Lv3: 25 프레임 (느리 → 빠르게)
+        // Lv1:60, Lv2:45, Lv3:32, Lv4:24, Lv5:18
         switch (level) {
             case 1: return 60;
-            case 2: return 40;
-            case 3: return 25;
+            case 2: return 45;
+            case 3: return 32;
+            case 4: return 24;
+            case 5: return 18;
         }
         return 60;
     }
 
-    // 이펙트 표시용
     private int effectTimer = 0;
     private final int EFFECT_DURATION = 8;
 
@@ -44,17 +44,28 @@ public class SwordWeapon implements Weapon {
 
         int level = player.getWeaponUpgradeLevel(WeaponType.SWORD);
         if (level <= 0) level = 1;
+        if (level > 5) level = 5;
 
-        // 데미지: 20, 30, 40
-        int base = baseDamage + (level - 1) * 10;
+        // 데미지: 20, 30, 40, 55, 70
+        int base;
+        switch (level) {
+            case 1: base = 20; break;
+            case 2: base = 30; break;
+            case 3: base = 40; break;
+            case 4: base = 55; break;
+            case 5: base = 70; break;
+            default: base = baseDamage;
+        }
 
-        // 범위 크게: Lv1 120, Lv2 170, Lv3 230
+        // 범위: 60, 90, 130, 170, 210
         int range;
         switch (level) {
             case 1: range = baseRange; break;
             case 2: range = 90; break;
             case 3: range = 130; break;
-            default: range = 120;
+            case 4: range = 170; break;
+            case 5: range = 210; break;
+            default: range = baseRange;
         }
 
         double mul = player.getAttackMultiplier();
@@ -75,8 +86,6 @@ public class SwordWeapon implements Weapon {
                 int screenX = m.worldX - player.worldX + player.screenX;
                 int screenY = m.worldY - player.worldY + player.screenY;
                 gp.addDamageText(screenX, screenY, finalDamage);
-
-                System.out.println("Sword(Lv " + level + ") hit " + m + " for " + finalDamage);
             }
         }
 
@@ -93,14 +102,16 @@ public class SwordWeapon implements Weapon {
 
         int level = player.getWeaponUpgradeLevel(WeaponType.SWORD);
         if (level <= 0) level = 1;
+        if (level > 5) level = 5;
 
-        //  이펙트 원도 같은 range 사용
         int range;
         switch (level) {
             case 1: range = baseRange; break;
             case 2: range = 90; break;
             case 3: range = 130; break;
-            default: range = 120;
+            case 4: range = 170; break;
+            case 5: range = 210; break;
+            default: range = baseRange;
         }
 
         int sizeW = player.width + range;
