@@ -11,20 +11,22 @@ public class FireballProjectile {
 
     private double x, y;
     private double vx, vy;
-    private final double speed = 8.0;     // 파이어볼 이동 속도
-    private final double maxDistance = 300.0;	// 날아가는 거리
+    private final double speed = 8.0;
+    private final double maxDistance = 300.0;
 
     private double traveled = 0.0;
 
     private int damage;
-    private int radius;                   // 폭발 반경
+    private int radius;
 
     private boolean exploded = false;
     private boolean finished = false;
     private int explosionTimer = 0;
-    private final int EXPLOSION_DURATION = 12; // 폭발 이펙트 유지 프레임
+    private final int EXPLOSION_DURATION = 12;
 
     private final GamePanel gp;
+
+    private static final int FIREBALL_SIZE = 18;
 
     public FireballProjectile(GamePanel gp,
                               double startX, double startY,
@@ -50,17 +52,24 @@ public class FireballProjectile {
         if (finished) return;
 
         if (!exploded) {
-            // 날아가는 중
             x += vx;
             y += vy;
             traveled += Math.sqrt(vx * vx + vy * vy);
 
-            // 일정 거리 이상 가면 자동 폭발
+            Rectangle myRect = getHitBounds();
+            for (Monster m : monsters) {
+                if (m == null || !m.isAlive()) continue;
+
+                if (myRect.intersects(m.getBounds())) {
+                    explode(monsters, player);
+                    return;
+                }
+            }
+
             if (traveled >= maxDistance) {
                 explode(monsters, player);
             }
         } else {
-            // 폭발 이펙트 유지 시간
             explosionTimer++;
             if (explosionTimer > EXPLOSION_DURATION) {
                 finished = true;
@@ -68,7 +77,17 @@ public class FireballProjectile {
         }
     }
 
+    private Rectangle getHitBounds() {
+        return new Rectangle(
+                (int) (x - FIREBALL_SIZE / 2.0),
+                (int) (y - FIREBALL_SIZE / 2.0),
+                FIREBALL_SIZE,
+                FIREBALL_SIZE
+        );
+    }
+
     private void explode(List<Monster> monsters, Player player) {
+        if (exploded) return;
         exploded = true;
 
         int cx = (int) x;
@@ -76,10 +95,12 @@ public class FireballProjectile {
         int r2 = radius * radius;
 
         for (Monster m : monsters) {
-            if (!m.isAlive()) continue;
+            if (m == null || !m.isAlive()) continue;
 
-            int mx = m.worldX + m.width / 2;
-            int my = m.worldY + m.height / 2;
+            Rectangle hb = m.getBounds();
+            int mx = hb.x + hb.width / 2;
+            int my = hb.y + hb.height / 2;
+
             int dx = mx - cx;
             int dy = my - cy;
 
@@ -100,28 +121,25 @@ public class FireballProjectile {
         int screenY = (int) y - player.worldY + player.screenY;
 
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                            RenderingHints.VALUE_ANTIALIAS_ON);
+                RenderingHints.VALUE_ANTIALIAS_ON);
 
         if (!exploded) {
-            // 날아가는 파이어볼(작은 불덩이)
-            int size = 18;
             g2.setColor(new Color(255, 180, 0));
-            g2.fillOval(screenX - size / 2, screenY - size / 2, size, size);
+            g2.fillOval(screenX - FIREBALL_SIZE / 2, screenY - FIREBALL_SIZE / 2, FIREBALL_SIZE, FIREBALL_SIZE);
             g2.setColor(new Color(255, 80, 0));
-            g2.drawOval(screenX - size / 2, screenY - size / 2, size, size);
+            g2.drawOval(screenX - FIREBALL_SIZE / 2, screenY - FIREBALL_SIZE / 2, FIREBALL_SIZE, FIREBALL_SIZE);
         } else {
-            // 폭발 이펙트 (점점 사라지는 원)
             float t = explosionTimer / (float) EXPLOSION_DURATION;
             int alpha = (int) ((1.0f - t) * 180);
             int currentR = (int) (radius * (0.8 + 0.4 * t));
 
             g2.setColor(new Color(255, 200, 50, Math.max(0, alpha)));
             g2.fillOval(screenX - currentR, screenY - currentR,
-                        currentR * 2, currentR * 2);
+                    currentR * 2, currentR * 2);
 
             g2.setColor(new Color(255, 120, 0, Math.max(0, alpha + 40)));
             g2.drawOval(screenX - currentR, screenY - currentR,
-                        currentR * 2, currentR * 2);
+                    currentR * 2, currentR * 2);
         }
     }
 }

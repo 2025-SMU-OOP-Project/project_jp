@@ -48,7 +48,7 @@ public class SwordWeapon implements Weapon {
         // 데미지: 20, 30, 40
         int base = baseDamage + (level - 1) * 10;
 
-        // ✅ 범위 크게: Lv1 120, Lv2 170, Lv3 230
+        // 범위 크게: Lv1 120, Lv2 170, Lv3 230
         int range;
         switch (level) {
             case 1: range = baseRange; break;

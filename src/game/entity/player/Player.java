@@ -22,7 +22,7 @@ public class Player {
 
     public int worldX, worldY;
     public int screenX, screenY;
-    public int width = 40, height = 40;
+    public int width = 45, height = 45;
 
     private final int baseSpeed = 4;
     public int speed = baseSpeed;
@@ -140,6 +140,10 @@ public class Player {
     private int calcExpToNextLevel() {
         // 레벨이 오를수록 조금씩 증가
         return 50 + (level - 1) * 15;
+    }
+    
+    public void healToFull() {
+        this.currentHp = this.maxHp;
     }
 
     /** 경험치를 얻고, 레벨업이 일어나면 true 리턴 */
@@ -287,5 +291,80 @@ public class Player {
     // ----------------------------------------------------
     public GamePanel getGamePanel() {
         return gp;
+    }
+    
+ // ===== 이어하기(세이브/로드) 지원 =====
+    public game.save.SaveState.PlayerState exportState() {
+        game.save.SaveState.PlayerState ps = new game.save.SaveState.PlayerState();
+
+        ps.worldX = this.worldX;
+        ps.worldY = this.worldY;
+
+        ps.currentHp = this.currentHp;
+        ps.maxHp = this.maxHp;
+
+        ps.level = this.level;
+        ps.currentExp = this.currentExp;
+        ps.expToNextLevel = this.expToNextLevel;
+
+        ps.attackLevel = this.attackLevel;
+        ps.speedLevel = this.speedLevel;
+        ps.maxHpLevel = this.maxHpLevel;
+
+        ps.weapons.clear();
+        for (OwnedWeapon ow : ownedWeapons) {
+            if (ow == null) continue;
+            game.save.SaveState.WeaponState ws = new game.save.SaveState.WeaponState();
+            ws.type = ow.type;
+            ws.level = ow.level;
+            ps.weapons.add(ws);
+        }
+
+        return ps;
+    }
+
+    public void importState(game.save.SaveState.PlayerState ps) {
+        if (ps == null) return;
+
+        this.worldX = ps.worldX;
+        this.worldY = ps.worldY;
+
+        this.attackLevel = ps.attackLevel;
+        this.speedLevel = ps.speedLevel;
+        this.maxHpLevel = ps.maxHpLevel;
+
+        // 스탯 재계산(속도/최대체력 반영)
+        recalcStats();
+
+        // 최대체력/현재체력 반영
+        this.maxHp = ps.maxHp; // 저장값이 더 정확하니 우선 반영
+        this.currentHp = Math.min(ps.currentHp, this.maxHp);
+
+        this.level = ps.level;
+        this.currentExp = ps.currentExp;
+        this.expToNextLevel = ps.expToNextLevel;
+
+        // 무기 복원
+        this.ownedWeapons.clear();
+        if (ps.weapons != null) {
+            for (game.save.SaveState.WeaponState ws : ps.weapons) {
+                if (ws == null) continue;
+                OwnedWeapon newW = new OwnedWeapon();
+                newW.type = ws.type;
+                newW.level = ws.level;
+                newW.cooldownCounter = 0;
+
+                switch (ws.type) {
+                    case SWORD: newW.weapon = new game.combat.SwordWeapon(); break;
+                    case BOW:   newW.weapon = new game.combat.BowWeapon();   break;
+                    case STAFF: newW.weapon = new game.combat.StaffWeapon(); break;
+                }
+                this.ownedWeapons.add(newW);
+            }
+        }
+
+        // 무적/피격 상태는 로드시 초기화
+        this.isInvincible = false;
+        this.invincibleCounter = 0;
     }
 }

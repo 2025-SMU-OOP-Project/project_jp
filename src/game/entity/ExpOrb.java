@@ -13,9 +13,9 @@ public class ExpOrb {
     private int value;
 
     // 흡수 관련
-    private static final double ATTRACT_RADIUS = 80.0;
-    private static final double PICKUP_RADIUS  = 16.0;
-    private static final double BASE_SPEED     = 2.0;
+    private static final double ATTRACT_RADIUS = 90.0;
+    private static final double PICKUP_RADIUS  = 28.0;
+    private static final double BASE_SPEED     = 2.5;
 
     // 아이콘 이펙트용
     private int tick = 0;

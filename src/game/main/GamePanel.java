@@ -14,20 +14,35 @@ import game.entity.monster.Monster;
 import game.entity.player.Player;
 import game.effects.DamageText;
 import game.state.GameState;
+import game.entity.monster.EnemyProjectile;
+import game.save.SaveManager;
+import game.save.SaveState;
+
 
 public class GamePanel extends JPanel implements KeyListener {
 
     private final int SCREEN_WIDTH  = 800;
     private final int SCREEN_HEIGHT = 600;
     private final int FPS = 60;
-    
-    // UI 애니메이션용
+
     private double uiHpDisplay;
     private double uiExpDisplay;
     private int uiTick = 0;
 
+    private int runKills = 0;
+    private int runTimeSec = 0;
+    private int runScore = 0;
+
+    private int bestKills = 0;
+    private int bestTimeSec = 0;
+    private int bestScore = 0;
+
+    private final java.util.prefs.Preferences prefs =
+            java.util.prefs.Preferences.userNodeForPackage(GamePanel.class);
 
     private final MainScreen mainFrame;
+
+    private final java.util.List<Monster> pendingMonstersToAdd = new ArrayList<>();
 
     public KeyHandler keyH = new KeyHandler(this);
     private java.util.List<DamageText> damageTexts = new ArrayList<>();
@@ -36,13 +51,17 @@ public class GamePanel extends JPanel implements KeyListener {
     public java.util.List<Monster> monsters = new ArrayList<>();
 
     private javax.swing.Timer gameTimer;
-    private GameOverPanel gameOverPanel;   // 게임오버 화면
+    private GameOverPanel gameOverPanel;
 
-    // 투사체들
     private java.util.List<ArrowProjectile> arrows       = new ArrayList<>();
     private java.util.List<FireballProjectile> fireballs = new ArrayList<>();
+    private java.util.List<EnemyProjectile> enemyProjectiles = new ArrayList<>();
 
-    // 경험치 구슬
+    private int eliteTimer = 0;
+    private int nonBossKillCount = 0;
+    private boolean bossAlive = false;
+    private int bossKillThreshold = 50;
+
     private java.util.List<ExpOrb> expOrbs = new ArrayList<>();
 
     public GameState gameState = GameState.RUNNING;
@@ -51,47 +70,53 @@ public class GamePanel extends JPanel implements KeyListener {
     private Random rand = new Random();
     private int spawnTimer = 0;
     private final int SPAWN_INTERVAL = 60;
+    
+    private int autosaveCounter = 0;
+    private final int AUTOSAVE_INTERVAL_SEC = 10;
 
     private Image backgroundImage;
-    private Image batImg, mummyImg, slimeImg;
+    private Image batImg, mummyImg, slimeImg, dogImg;
     private int bgWidth, bgHeight;
 
     private PausePanel pausePanel;
     private LevelUpPanel levelUpPanel;
     private WeaponSelectPanel weaponSelectPanel;
 
-    // 통계
     private int killCount = 0;
-    private long startNanoTime = 0L;
-    
-    // TAB으로 여닫는 상태 패널
+
     private boolean showStatusPanel = false;
-    
-    // LEVEL UP 패널을 나중에 띄우기 위한 플래그
+
     private boolean pendingLevelUpPanel = false;
-
-
-    // LEVEL UP! 텍스트 표시용
     private int levelUpMessageTimer = 0;
 
-    // 레벨업 선택지
     private enum ChoiceType { PASSIVE_ATK, PASSIVE_SPD, PASSIVE_HP, WEAPON }
 
     private static class LevelUpChoice {
         ChoiceType type;
-        WeaponType weaponType; // WEAPON일 때만 사용
+        WeaponType weaponType;
         String title;
-        String desc;           // 툴팁용 설명
+        String desc;
+    }
+    
+    private void resetBestRecord() {
+        bestScore = 0;
+        bestKills = 0;
+        bestTimeSec = 0;
+
+        prefs.remove("bestScore");
+        prefs.remove("bestKills");
+        prefs.remove("bestTimeSec");
+
+        System.out.println("[DEBUG] Best record reset");
     }
 
     private LevelUpChoice[] levelUpChoices = new LevelUpChoice[3];
 
-    // 시작 무기 선택 중인지 여부
     private boolean waitingWeaponSelect = true;
 
-    // ----------------------------------------------------
-    // 생성자
-    // ----------------------------------------------------
+    private long playAccumNano = 0L;
+    private long playResumeNano = 0L;
+
     public GamePanel(MainScreen mainFrame) {
         this.mainFrame = mainFrame;
 
@@ -100,17 +125,15 @@ public class GamePanel extends JPanel implements KeyListener {
         setDoubleBuffered(true);
         setFocusable(true);
         setLayout(null);
-        setFocusTraversalKeysEnabled(false); 
+        setFocusTraversalKeysEnabled(false);
 
         addKeyListener(keyH);
         addKeyListener(this);
 
         loadImages();
 
-        // 처음에는 무기 없이 생성 (시작 시 선택)
         player = new Player(this, keyH, null);
-        
-        // UI 표시용 초기값
+
         uiHpDisplay = player.getMaxHp();
         uiExpDisplay = 0.0;
 
@@ -125,12 +148,13 @@ public class GamePanel extends JPanel implements KeyListener {
         weaponSelectPanel = new WeaponSelectPanel();
         weaponSelectPanel.setVisible(true);
         add(weaponSelectPanel);
-        
+
         gameOverPanel = new GameOverPanel();
         gameOverPanel.setVisible(false);
         add(gameOverPanel);
 
-        // 창 크기 바뀔 때 오버레이 패널과 플레이어 화면 위치 맞추기
+        loadBestRecord();
+
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -152,6 +176,7 @@ public class GamePanel extends JPanel implements KeyListener {
                 if (player != null) {
                     player.updateScreenCenter();
                 }
+
                 if (gameOverPanel != null) {
                     gameOverPanel.setBounds(0, 0, getWidth(), getHeight());
                     gameOverPanel.revalidate();
@@ -161,9 +186,6 @@ public class GamePanel extends JPanel implements KeyListener {
         });
     }
 
-    // ----------------------------------------------------
-    // 이미지 로드
-    // ----------------------------------------------------
     private void loadImages() {
         try {
             backgroundImage = new ImageIcon(
@@ -181,13 +203,15 @@ public class GamePanel extends JPanel implements KeyListener {
             slimeImg = new ImageIcon(
                     getClass().getResource("/images/monsters/slime.png")
             ).getImage();
+            dogImg = new ImageIcon(
+                    getClass().getResource("/images/monsters/dog.png")
+            ).getImage();
 
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // 활 발사체 생성
     public void spawnArrow(double startX, double startY,
                            double dirX, double dirY,
                            int damage, int hitsAllowed,
@@ -196,7 +220,6 @@ public class GamePanel extends JPanel implements KeyListener {
                 dirX, dirY, damage, hitsAllowed, speed));
     }
 
-    // 파이어볼 발사체 생성
     public void spawnFireball(double startX, double startY,
                               double dirX, double dirY,
                               int damage, int radius) {
@@ -204,12 +227,7 @@ public class GamePanel extends JPanel implements KeyListener {
                 dirX, dirY, damage, radius));
     }
 
-    // ----------------------------------------------------
-    // 게임 루프 시작
-    // ----------------------------------------------------
     public void startGameLoop() {
-        // JOptionPane 으로 무기 선택하던 부분 제거
-        // 무기 선택은 WeaponSelectPanel에서 처리
         gameTimer = new javax.swing.Timer(1000 / FPS, e -> {
             update();
             repaint();
@@ -217,13 +235,47 @@ public class GamePanel extends JPanel implements KeyListener {
         gameTimer.start();
     }
 
-    // ----------------------------------------------------
-    // 업데이트
-    // ----------------------------------------------------
+    private boolean isTimeRunning() {
+        if (paused) return false;
+        if (waitingWeaponSelect) return false;
+        return gameState == GameState.RUNNING;
+    }
+
+    private void onEnterRunning() {
+        if (playResumeNano == 0L) {
+            playResumeNano = System.nanoTime();
+        }
+    }
+
+    private void onLeaveRunning() {
+        if (playResumeNano != 0L) {
+            playAccumNano += (System.nanoTime() - playResumeNano);
+            playResumeNano = 0L;
+        }
+    }
+
+    private int getElapsedPlaySec() {
+        long total = playAccumNano;
+        if (isTimeRunning() && playResumeNano != 0L) {
+            total += (System.nanoTime() - playResumeNano);
+        }
+        return (int)(total / 1_000_000_000L);
+    }
+
+    private void resetPlayTime() {
+        playAccumNano = 0L;
+        playResumeNano = 0L;
+    }
+
     private void update() {
+        if (isTimeRunning()) {
+            onEnterRunning();
+        } else {
+            onLeaveRunning();
+        }
+
         if (paused) return;
 
-        // 아직 시작 무기를 선택하지 않았다면 게임 로직 진행 X
         if (waitingWeaponSelect) {
             return;
         }
@@ -231,48 +283,76 @@ public class GamePanel extends JPanel implements KeyListener {
         if (gameState == GameState.RUNNING) {
             player.update();
 
-            // 몬스터 스폰
+            int elapsedSec = getElapsedPlaySec();
+            int difficultyStage = elapsedSec / 30;
+
             spawnTimer++;
             if (spawnTimer >= SPAWN_INTERVAL) {
                 spawnMonster();
                 spawnTimer = 0;
             }
 
-            // 몬스터 이동 + 충돌/사망 처리
             for (Iterator<Monster> it = monsters.iterator(); it.hasNext();) {
                 Monster m = it.next();
 
                 if (!m.isAlive()) {
-                    // 죽은 몬스터 → 제거 + 킬 카운트 증가 + 경험치 구슬 드랍
                     it.remove();
                     killCount++;
+
+                    if (!m.isBoss()) nonBossKillCount++;
+
+                    if (m.getKind() == Monster.MonsterKind.SPLITTER) {
+                        spawnSplitChildren(m, difficultyStage);
+                    }
+
+                    if (m.getKind() == Monster.MonsterKind.BOSS) {
+                        bossAlive = false;
+                        nonBossKillCount = 0;
+                        bossKillThreshold += 20;
+                    }
+
                     spawnExpOrb(m);
                     continue;
                 }
 
-                m.update(player.worldX, player.worldY);
+                m.update(player.worldX, player.worldY, (sx, sy, dx, dy, dmg, spd) -> {
+                    enemyProjectiles.add(new EnemyProjectile(sx, sy, dx, dy, spd, dmg));
+                });
 
                 if (player.getBounds().intersects(m.getBounds())) {
                     player.takeDamage(m.getDamage());
                 }
             }
 
-            // 경험치 구슬 먹기
+            if (!pendingMonstersToAdd.isEmpty()) {
+                monsters.addAll(pendingMonstersToAdd);
+                pendingMonstersToAdd.clear();
+            }
+
+            eliteTimer++;
+            if (eliteTimer >= 30 * FPS) {
+                spawnEliteMonster(difficultyStage);
+                eliteTimer = 0;
+            }
+
+            if (!bossAlive && nonBossKillCount >= bossKillThreshold) {
+                spawnBossMonster(difficultyStage);
+                bossAlive = true;
+            }
+
             for (Iterator<ExpOrb> it = expOrbs.iterator(); it.hasNext();) {
                 ExpOrb orb = it.next();
 
-                // orb.update(player)가 true면 플레이어에게 흡수된 것
                 if (orb.update(player)) {
                     it.remove();
                     boolean leveledUp = player.gainExp(orb.getValue());
                     if (leveledUp) {
                         handleLevelUp();
-                        break; // 이번 프레임은 여기까지
+                        break;
                     }
                 }
             }
 
-            // 무기 자동 공격 (보유한 모든 무기)
             for (Player.OwnedWeapon ow : player.getOwnedWeapons()) {
                 if (ow.weapon == null) continue;
 
@@ -284,33 +364,32 @@ public class GamePanel extends JPanel implements KeyListener {
                 }
             }
 
-            // 화살 업데이트
             for (Iterator<ArrowProjectile> it = arrows.iterator(); it.hasNext();) {
                 ArrowProjectile arrow = it.next();
                 arrow.update(monsters, player);
-                if (!arrow.isAlive()) {
-                    it.remove();
-                }
+                if (!arrow.isAlive()) it.remove();
             }
 
-            // 파이어볼 업데이트
             for (Iterator<FireballProjectile> it = fireballs.iterator(); it.hasNext();) {
                 FireballProjectile fb = it.next();
                 fb.update(monsters, player);
-                if (!fb.isAlive()) {
-                    it.remove();
-                }
+                if (!fb.isAlive()) it.remove();
             }
 
-            // 데미지 텍스트 업데이트 및 제거
+            for (Iterator<EnemyProjectile> itp = enemyProjectiles.iterator(); itp.hasNext();) {
+                EnemyProjectile p = itp.next();
+                p.update(player);
+                if (!p.isAlive()) itp.remove();
+            }
+
             damageTexts.removeIf(DamageText::update);
+
             if (player.getCurrentHp() <= 0 && gameState != GameState.GAMEOVER) {
                 triggerGameOver();
             }
-            
-            // ───── UI 애니메이션 (HP/EXP 보간, 틱 증가) ─────
+
             double hpTarget = player.getCurrentHp();
-            uiHpDisplay += (hpTarget - uiHpDisplay) * 0.15;   // 부드럽게 따라가기
+            uiHpDisplay += (hpTarget - uiHpDisplay) * 0.15;
 
             double expTarget = 0.0;
             if (player.getExpToNextLevel() > 0) {
@@ -318,37 +397,98 @@ public class GamePanel extends JPanel implements KeyListener {
             }
             uiExpDisplay += (expTarget - uiExpDisplay) * 0.25;
 
+            // 자동 저장 (10초마다)
+            autosaveCounter++;
+            if (autosaveCounter >= AUTOSAVE_INTERVAL_SEC * FPS) {
+                saveRun();
+                autosaveCounter = 0;
+            }
+
             uiTick++;
         }
     }
 
-    // 몬스터 스폰
     private void spawnMonster() {
-        int type = rand.nextInt(3);
-        Image img = (type == 0 ? batImg : type == 1 ? mummyImg : slimeImg);
+        int elapsedSec = getElapsedPlaySec();
+        int difficultyStage = elapsedSec / 30;
 
-        int spawnX = player.worldX + rand.nextInt(1600) - 800;
-        int spawnY = player.worldY + rand.nextInt(1200) - 600;
+        int spawnCount = 1 + Math.min(2, difficultyStage / 2);
 
-        monsters.add(new Monster(spawnX, spawnY, img));
+        for (int i = 0; i < spawnCount; i++) {
+            Monster.MonsterKind kind = Monster.MonsterKind.NORMAL;
+            int roll = rand.nextInt(100);
+
+            if (difficultyStage >= 1) {
+                if (roll < 20) kind = Monster.MonsterKind.DASHER;
+            }
+            if (difficultyStage >= 2) {
+                if (roll < 15) kind = Monster.MonsterKind.SHOOTER;
+            }
+            if (difficultyStage >= 3) {
+                if (roll < 10) kind = Monster.MonsterKind.SPLITTER;
+            }
+
+            Image img = getImageForKind(kind);
+
+            int spawnX = player.worldX + rand.nextInt(1600) - 800;
+            int spawnY = player.worldY + rand.nextInt(1200) - 600;
+
+            monsters.add(new Monster(spawnX, spawnY, img, kind, difficultyStage));
+        }
     }
 
-    // 경험치 구슬 드랍
+    private Image getImageForKind(Monster.MonsterKind kind) {
+        switch (kind) {
+            case SHOOTER:     return batImg;
+            case DASHER:      return dogImg;
+            case SPLITTER:    return slimeImg;
+            case SPLIT_CHILD: return slimeImg;
+            case NORMAL:      return mummyImg;
+            case ELITE:       return mummyImg;
+            case BOSS:        return mummyImg;
+            default:          return mummyImg;
+        }
+    }
+
+    private void spawnEliteMonster(int difficultyStage) {
+        int spawnX = player.worldX + rand.nextInt(1600) - 800;
+        int spawnY = player.worldY + rand.nextInt(1200) - 600;
+        monsters.add(new Monster(spawnX, spawnY, getImageForKind(Monster.MonsterKind.ELITE),
+                Monster.MonsterKind.ELITE, difficultyStage));
+    }
+
+    private void spawnBossMonster(int difficultyStage) {
+        int spawnX = player.worldX + rand.nextInt(800) - 400;
+        int spawnY = player.worldY + rand.nextInt(600) - 300;
+        monsters.add(new Monster(spawnX, spawnY, getImageForKind(Monster.MonsterKind.BOSS),
+                Monster.MonsterKind.BOSS, difficultyStage));
+    }
+
+    private void spawnSplitChildren(Monster parent, int difficultyStage) {
+        int x = parent.worldX;
+        int y = parent.worldY;
+
+        Image img = getImageForKind(Monster.MonsterKind.SPLIT_CHILD);
+
+        pendingMonstersToAdd.add(new Monster(x - 12, y - 12, img, Monster.MonsterKind.SPLIT_CHILD, difficultyStage));
+        pendingMonstersToAdd.add(new Monster(x + 12, y + 12, img, Monster.MonsterKind.SPLIT_CHILD, difficultyStage));
+    }
+
     private void spawnExpOrb(Monster m) {
         int x = m.worldX + m.width / 2;
         int y = m.worldY + m.height / 2;
-        int value = 10; // 몬스터당 경험치 양 (필요하면 조정)
+
+        int value = 10;
+        if (m.isElite()) value *= 2;
+        if (m.isBoss())  value *= 10;
+
         expOrbs.add(new ExpOrb(x, y, value));
     }
 
-    // 데미지 텍스트 추가
     public void addDamageText(int screenX, int screenY, int damage) {
         damageTexts.add(new DamageText(screenX, screenY, damage));
     }
 
-    // ----------------------------------------------------
-    // 레벨업 처리
-    // ----------------------------------------------------
     private LevelUpChoice makePassiveChoice(ChoiceType type, String title, String desc) {
         LevelUpChoice c = new LevelUpChoice();
         c.type = type;
@@ -369,19 +509,20 @@ public class GamePanel extends JPanel implements KeyListener {
     private void handleLevelUp() {
         if (player.getLevel() >= player.getMaxLevel()) return;
 
+        player.healToFull();
+
         paused = true;
         gameState = GameState.LEVELUP;
-        levelUpMessageTimer = 40; // 60이 약 1초 정도 LEVEL UP! 띄우기
+        levelUpMessageTimer = 40;
 
-        prepareLevelUpChoices();        // 미리 선택지 생성
-        pendingLevelUpPanel = true;     // 나중에 패널 띄우겠다는 표시
-        levelUpPanel.setVisible(false); // 일단 숨겨둠
+        prepareLevelUpChoices();
+        pendingLevelUpPanel = true;
+        levelUpPanel.setVisible(false);
     }
 
     private void prepareLevelUpChoices() {
         java.util.List<LevelUpChoice> pool = new ArrayList<>();
 
-        // 패시브 3개
         pool.add(makePassiveChoice(
                 ChoiceType.PASSIVE_ATK,
                 "공격력 증가 (+20%)",
@@ -395,7 +536,6 @@ public class GamePanel extends JPanel implements KeyListener {
                 "최대 체력 증가 (+20)",
                 "최대 체력이 +20 증가하며, 그만큼 체력 즉시 회복"));
 
-        // 무기 3개 (이미 3단계면 후보에서 제외)
         if (player.canUpgradeWeapon(WeaponType.SWORD)) {
             pool.add(makeWeaponChoice(
                     WeaponType.SWORD,
@@ -447,56 +587,37 @@ public class GamePanel extends JPanel implements KeyListener {
         requestFocusInWindow();
     }
 
-    // ----------------------------------------------------
-    // 그리기
-    // ----------------------------------------------------
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        // 배경
         drawBackground(g);
 
-        // 몬스터
         for (Monster m : monsters) {
             m.draw(g, player);
         }
 
-        // 경험치 구슬
         for (ExpOrb orb : expOrbs) {
             orb.draw(g, player);
         }
 
-        // 플레이어
         player.draw(g);
 
-        // 투사체들
         Graphics2D g2 = (Graphics2D) g.create();
-        for (ArrowProjectile arrow : arrows) {
-            arrow.draw(g2, player);
-        }
-        for (FireballProjectile fb : fireballs) {
-            fb.draw(g2, player);
-        }
+        for (ArrowProjectile arrow : arrows) arrow.draw(g2, player);
+        for (FireballProjectile fb : fireballs) fb.draw(g2, player);
+        for (EnemyProjectile p : enemyProjectiles) p.draw(g2, player);
         g2.dispose();
 
-        // 무기 이펙트 (보유한 모든 무기)
         for (Player.OwnedWeapon ow : player.getOwnedWeapons()) {
-            if (ow.weapon != null) {
-                ow.weapon.draw(g, player);
-            }
+            if (ow.weapon != null) ow.weapon.draw(g, player);
         }
 
-        // 데미지 텍스트
         Graphics2D g2d = (Graphics2D) g;
-        for (DamageText dt : damageTexts) {
-            dt.draw(g2d);
-        }
+        for (DamageText dt : damageTexts) dt.draw(g2d);
 
-        // UI (HP + Kill + Time + 레벨/패시브/무기현황)
         drawUI(g);
 
-        // LEVEL UP! 텍스트 (잠깐 크게)
         if (gameState == GameState.LEVELUP && levelUpMessageTimer > 0) {
             Graphics2D gLv = (Graphics2D) g.create();
             gLv.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
@@ -506,7 +627,6 @@ public class GamePanel extends JPanel implements KeyListener {
             gLv.setFont(new Font("맑은 고딕", Font.BOLD, 48));
             FontMetrics fm = gLv.getFontMetrics();
             int tw = fm.stringWidth(text);
-            int th = fm.getAscent();
 
             int x = (getWidth() - tw) / 2;
             int y = (getHeight() / 2) - 120;
@@ -519,27 +639,16 @@ public class GamePanel extends JPanel implements KeyListener {
 
             gLv.dispose();
             levelUpMessageTimer--;
-            
+
             if (pendingLevelUpPanel && levelUpMessageTimer <= 0) {
                 levelUpPanel.refreshButtons();
                 levelUpPanel.setVisible(true);
                 levelUpPanel.repaint();
-                pendingLevelUpPanel = false;   // 다시 안 뜨게
-            }
-            
-            double lowHpRatio = (double) player.getCurrentHp() / player.getMaxHp();
-            if (lowHpRatio < 0.25) {
-                Graphics2D gLow = (Graphics2D) g.create();
-                int alpha = (int)(160 * (0.25 - lowHpRatio) / 0.25); // 0~160
-                alpha = Math.max(40, Math.min(160, alpha));          // 최소는 조금 보이게
-                gLow.setColor(new Color(180, 0, 0, alpha));
-                gLow.fillRect(0, 0, getWidth(), getHeight());
-                gLow.dispose();
+                pendingLevelUpPanel = false;
             }
         }
     }
 
-    // 배경 타일링
     private void drawBackground(Graphics g) {
         int offsetX = -(player.worldX % bgWidth);
         int offsetY = -(player.worldY % bgHeight);
@@ -554,23 +663,19 @@ public class GamePanel extends JPanel implements KeyListener {
         }
     }
 
-    // UI (HP 바 + 킬/시간 + 레벨 + 패시브 + 무기현황)
-    // UI (HP/EXP 바 + 킬/시간 + (TAB) 레벨/패시브/무기현황)
     private void drawUI(Graphics g) {
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                            RenderingHints.VALUE_ANTIALIAS_ON);
+                RenderingHints.VALUE_ANTIALIAS_ON);
 
-        // ───────── 상단 HUD 박스 ─────────
         int hudX = 10;
         int hudY = 10;
         int hudW = 420;
-        int hudH = 70;   // 높이 조금 키움 (EXP 바까지)
+        int hudH = 86;
 
         Shape hudRect = new RoundRectangle2D.Float(
                 hudX, hudY, hudW, hudH, 18, 18);
 
-        // 어두운 반투명 박스 + 살짝 빛나는 테두리
         g2.setPaint(new GradientPaint(
                 hudX, hudY,
                 new Color(10, 10, 10, 200),
@@ -582,23 +687,18 @@ public class GamePanel extends JPanel implements KeyListener {
         g2.setStroke(new BasicStroke(2f));
         g2.draw(hudRect);
 
-        // ───────── HP & EXP 영역 ─────────
         int barAreaX = hudX + 16;
         int barAreaY = hudY + 10;
         int barW     = 260;
         int barH     = 16;
 
-        // ===== HP 바 =====
-        // 현재 HP (애니메이션 값 사용)
         double hpRatio = uiHpDisplay / player.getMaxHp();
         hpRatio = Math.max(0.0, Math.min(1.0, hpRatio));
         int hpCurW = (int) (barW * hpRatio);
 
-        // HP 바 배경
         g2.setColor(new Color(40, 40, 40));
         g2.fillRoundRect(barAreaX, barAreaY, barW, barH, 12, 12);
 
-        // HP 바 (붉은 그라데이션)
         GradientPaint hpGp = new GradientPaint(
                 barAreaX, barAreaY,
                 new Color(220, 60, 60),
@@ -607,17 +707,14 @@ public class GamePanel extends JPanel implements KeyListener {
         g2.setPaint(hpGp);
         g2.fillRoundRect(barAreaX, barAreaY, hpCurW, barH, 12, 12);
 
-        // 테두리
         g2.setColor(new Color(0, 0, 0, 200));
         g2.drawRoundRect(barAreaX, barAreaY, barW, barH, 12, 12);
 
-        // HP 수치 텍스트 (예: 80 / 100)
         g2.setFont(new Font("맑은 고딕", Font.BOLD, 12));
         String hpText = (int)Math.round(uiHpDisplay) + " / " + player.getMaxHp();
         FontMetrics fmHp = g2.getFontMetrics();
         int hpTw = fmHp.stringWidth(hpText);
 
-        // 검은 그림자 + 흰 글씨
         g2.setColor(new Color(0, 0, 0, 180));
         g2.drawString(hpText,
                 barAreaX + (barW - hpTw) / 2 + 1,
@@ -627,7 +724,6 @@ public class GamePanel extends JPanel implements KeyListener {
                 barAreaX + (barW - hpTw) / 2,
                 barAreaY + barH - 4);
 
-        // HP 바 위로 지나가는 반짝이는 라인
         int shineWidth = 40;
         int sx = barAreaX + (uiTick % (barW + shineWidth)) - shineWidth;
         GradientPaint shineGp = new GradientPaint(
@@ -638,21 +734,17 @@ public class GamePanel extends JPanel implements KeyListener {
         g2.setPaint(shineGp);
         g2.fillRoundRect(sx, barAreaY, shineWidth, barH, 12, 12);
 
-        // ===== EXP 바 =====
         int expBarY = barAreaY + barH + 6;
         int curExp  = player.getCurrentExp();
         int nextExp = player.getExpToNextLevel();
 
-        // 애니메이션된 exp 비율 사용 (0.0 ~ 1.0)
         double expRatio = uiExpDisplay;
         expRatio = Math.max(0.0, Math.min(1.0, expRatio));
         int expCurW = (int) (barW * expRatio);
 
-        // EXP 배경
         g2.setColor(new Color(35, 35, 35));
         g2.fillRoundRect(barAreaX, expBarY, barW, 10, 10, 10);
 
-        // 보라색 EXP 바
         GradientPaint expGp = new GradientPaint(
                 barAreaX, expBarY,
                 new Color(160, 120, 255),
@@ -661,11 +753,9 @@ public class GamePanel extends JPanel implements KeyListener {
         g2.setPaint(expGp);
         g2.fillRoundRect(barAreaX, expBarY, expCurW, 10, 10, 10);
 
-        // 테두리
         g2.setColor(new Color(0, 0, 0, 180));
         g2.drawRoundRect(barAreaX, expBarY, barW, 10, 10, 10);
 
-        // EXP 수치 텍스트 (예: 10 / 50)
         String expText = curExp + " / " + nextExp;
         FontMetrics fmExp = g2.getFontMetrics();
         int expTw = fmExp.stringWidth(expText);
@@ -679,21 +769,19 @@ public class GamePanel extends JPanel implements KeyListener {
                 barAreaX + (barW - expTw) / 2,
                 expBarY + 8);
 
-        // 왼쪽에 현재 레벨 표시
         g2.setFont(new Font("맑은 고딕", Font.BOLD, 16));
         String lvText = "Lv " + player.getLevel();
         g2.setColor(new Color(255, 230, 180));
         g2.drawString(lvText, hudX + 20, hudY + hudH - 12);
 
-        // ───────── Kill / Time (우측) ─────────
-        int elapsedSec = (int) ((System.nanoTime() - startNanoTime) / 1_000_000_000L);
+        int elapsedSec = getElapsedPlaySec();
         String timeText = String.format("%02d:%02d", elapsedSec / 60, elapsedSec % 60);
 
         g2.setColor(new Color(220, 220, 220));
-        g2.drawString("Kill: " + killCount, hudX + hudW - 130, hudY + 26);
-        g2.drawString("Time: " + timeText, hudX + hudW - 130, hudY + 46);
+        int rightX = hudX + hudW - 130;
+        g2.drawString("Kill: " + killCount, rightX, hudY + 28);
+        g2.drawString("Time: " + timeText, rightX, hudY + 50);
 
-        // ───────── TAB 상태 패널 ─────────
         if (showStatusPanel) {
             int panelX = hudX;
             int panelY = hudY + hudH + 8;
@@ -717,91 +805,117 @@ public class GamePanel extends JPanel implements KeyListener {
             int y = panelY + 24;
             g2.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
 
-            // 레벨 / 경험치
             g2.setColor(Color.WHITE);
             g2.drawString(
                     "Lv " + player.getLevel() +
                             "   EXP " + player.getCurrentExp() + "/" + player.getExpToNextLevel(),
                     panelX + 18, y);
 
-            // 패시브 (작은 아이콘 + 텍스트)
             y += 18;
-            int iconY = y - 10;
 
-            // ATK 아이콘 + 글자
-            drawSwordIcon(g2, panelX + 22, iconY, 12);
             g2.setColor(new Color(220, 220, 255));
-            g2.drawString("ATK +" + (player.getAttackLevel() * 20) + "%",
-                          panelX + 34, y);
+            g2.drawString("ATK +" + (player.getAttackLevel() * 20) + "%", panelX + 22, y);
 
-            // SPD 아이콘 + 글자
-            drawBootIcon(g2, panelX + 150, iconY, 12);
-            g2.drawString("SPD +" + player.getSpeedLevel(),
-                          panelX + 162, y);
+            g2.drawString("SPD +" + player.getSpeedLevel(), panelX + 150, y);
 
-            // HP 아이콘 + 글자
-            drawHeartIcon(g2, panelX + 260, iconY, 12);
-            g2.drawString("HP +" + (player.getMaxHpLevel() * 20),
-                          panelX + 272, y);
+            g2.drawString("HP +" + (player.getMaxHpLevel() * 20), panelX + 260, y);
 
-            // 무기 현황
             y += 18;
             g2.setColor(new Color(255, 230, 180));
             g2.drawString(
                     "Weapons  " + player.getWeaponStatusString(),
                     panelX + 18, y);
 
-            // 안내 문구
             g2.setFont(new Font("맑은 고딕", Font.PLAIN, 11));
             g2.setColor(new Color(255, 255, 255, 140));
             g2.drawString("[TAB] : 상태 패널 토글",
                     panelX + 18, panelY + panelH - 10);
         } else {
-            // 닫혀 있을 때 작은 힌트
             g2.setFont(new Font("맑은 고딕", Font.PLAIN, 11));
             g2.setColor(new Color(255, 255, 255, 120));
             g2.drawString("[TAB] : 상태 보기",
-                          hudX + 20, hudY + hudH + 14);
+                    hudX + 20, hudY + hudH + 14);
         }
+        
+        // ===== 오른쪽 위 : 최고 기록 HUD =====
+        int bestBoxW = 220;
+        int bestBoxH = 72; // Best + Score 2줄
+        int bestBoxX = getWidth() - bestBoxW - 14;
+        int bestBoxY = 14;
+
+        Shape bestRect = new RoundRectangle2D.Float(
+                bestBoxX, bestBoxY, bestBoxW, bestBoxH, 18, 18);
+
+        g2.setPaint(new GradientPaint(
+                bestBoxX, bestBoxY,
+                new Color(10, 10, 10, 200),
+                bestBoxX, bestBoxY + bestBoxH,
+                new Color(20, 20, 20, 230)
+        ));
+        g2.fill(bestRect);
+
+        g2.setColor(new Color(255, 255, 255, 60));
+        g2.setStroke(new BasicStroke(2f));
+        g2.draw(bestRect);
+
+        // 폰트
+        g2.setFont(new Font("맑은 고딕", Font.BOLD, 16));
+
+        // ===== Best =====
+        g2.setColor(new Color(255, 210, 120));
+        String bestText = "Best: " + bestScore;
+        FontMetrics fmBest = g2.getFontMetrics();
+
+        int twBest = fmBest.stringWidth(bestText);
+        int txBest = bestBoxX + (bestBoxW - twBest) / 2;
+        int tyBest = bestBoxY + 28;
+
+        g2.drawString(bestText, txBest, tyBest);
+
+        // ===== 현재 점수 (실시간) =====
+        int currentScore = calcScore(killCount, getElapsedPlaySec());
+
+        g2.setColor(new Color(220, 220, 220));
+        String scoreText = "Score: " + currentScore;
+
+        FontMetrics fmScore = g2.getFontMetrics();
+        int twScore = fmScore.stringWidth(scoreText);
+        int txScore = bestBoxX + (bestBoxW - twScore) / 2;
+        int tyScore = bestBoxY + 54;
+
+        g2.drawString(scoreText, txScore, tyScore);
 
         g2.dispose();
     }
 
-    // ----------------------------------------------------
-    // KeyListener : ESC → 일시정지/재개
-    // ----------------------------------------------------
     @Override
     public void keyPressed(KeyEvent e) {
         int code = e.getKeyCode();
-        
-        // 게임오버 중에는 ESC / TAB 입력 다 무시
+
         if (gameState == GameState.GAMEOVER) return;
 
-        // ───────── TAB : 상태 패널 on/off ─────────
         if (code == KeyEvent.VK_TAB) {
-
-            // 아직 시작 무기 선택 중이면 무시
             if (waitingWeaponSelect) return;
+            if (gameState == GameState.LEVELUP || gameState == GameState.PAUSED) return;
 
-            // 레벨업 창, 일시정지창 떠 있을 때는 TAB 무시
-            if (gameState == GameState.LEVELUP || gameState == GameState.PAUSED) {
-                return;
-            }
-
-            // 단순히 on/off 토글
             showStatusPanel = !showStatusPanel;
             repaint();
-            return;   // 아래 ESC 처리와 겹치지 않게 바로 종료
+            return;
         }
 
-        // ───────── ESC : 일시정지 / 재개 ─────────
         if (code == KeyEvent.VK_ESCAPE) {
             if (gameState == GameState.RUNNING) {
                 showPauseMenu();
             } else if (gameState == GameState.PAUSED) {
                 resumeGame();
             }
-            // LEVELUP 상태에서는 ESC 무시
+        }
+        
+        // 디버그용 최고기록 초기화
+        if (code == KeyEvent.VK_F9) {
+            resetBestRecord();
+            repaint();
+            return;
         }
     }
 
@@ -834,9 +948,6 @@ public class GamePanel extends JPanel implements KeyListener {
         mainFrame.returnToMainMenu();
     }
 
-    // ----------------------------------------------------
-    // 공통 커스텀 버튼 : ChoiceButton
-    // ----------------------------------------------------
     private static class ChoiceButton extends JButton {
 
         public ChoiceButton(String text) {
@@ -862,7 +973,6 @@ public class GamePanel extends JPanel implements KeyListener {
 
             ButtonModel model = getModel();
 
-            // 상태에 따른 색
             Color top, bottom, border;
             if (model.isPressed()) {
                 top = new Color(250, 200, 120);
@@ -878,20 +988,14 @@ public class GamePanel extends JPanel implements KeyListener {
                 border = new Color(170, 170, 170);
             }
 
-            // 그라데이션 배경
-            GradientPaint gp = new GradientPaint(
-                    0, 0, top,
-                    0, h, bottom
-            );
+            GradientPaint gp = new GradientPaint(0, 0, top, 0, h, bottom);
             g2.setPaint(gp);
             g2.fillRoundRect(0, 0, w - 1, h - 1, arc, arc);
 
-            // 테두리
             g2.setColor(border);
             g2.setStroke(new BasicStroke(1.8f));
             g2.drawRoundRect(0, 0, w - 1, h - 1, arc, arc);
 
-            // 텍스트
             FontMetrics fm = g2.getFontMetrics();
             String text = getText();
             int tw = fm.stringWidth(text);
@@ -906,9 +1010,6 @@ public class GamePanel extends JPanel implements KeyListener {
         }
     }
 
-    // ----------------------------------------------------
-    // PausePanel : 전체 화면 오버레이 + 가운데 박스
-    // ----------------------------------------------------
     private class PausePanel extends JPanel {
 
         private JPanel inner;
@@ -931,7 +1032,10 @@ public class GamePanel extends JPanel implements KeyListener {
             JButton exitBtn   = new JButton("종료");
 
             resumeBtn.addActionListener(e -> resumeGame());
-            menuBtn.addActionListener(e -> returnToMainMenu());
+            menuBtn.addActionListener(e -> {
+                saveRun();
+                returnToMainMenu();
+            });
             exitBtn.addActionListener(e -> System.exit(0));
 
             for (JButton b : new JButton[]{resumeBtn, menuBtn, exitBtn}) {
@@ -956,6 +1060,8 @@ public class GamePanel extends JPanel implements KeyListener {
                     centerInner();
                 }
             });
+
+            SwingUtilities.invokeLater(this::centerInner);
         }
 
         private void centerInner() {
@@ -1008,9 +1114,6 @@ public class GamePanel extends JPanel implements KeyListener {
         }
     }
 
-    // ----------------------------------------------------
-    // LevelUpPanel : 레벨업 선택창 (멋있게 + 툴팁)
-    // ----------------------------------------------------
     private class LevelUpPanel extends JPanel {
 
         private JPanel inner;
@@ -1025,7 +1128,6 @@ public class GamePanel extends JPanel implements KeyListener {
             inner.setLayout(new BorderLayout());
             inner.setBorder(BorderFactory.createEmptyBorder(20, 30, 25, 30));
 
-            // ─ 타이틀 ─
             JLabel title = new JLabel("LEVEL UP!");
             title.setFont(new Font("맑은 고딕", Font.BOLD, 30));
             title.setHorizontalAlignment(SwingConstants.CENTER);
@@ -1045,10 +1147,9 @@ public class GamePanel extends JPanel implements KeyListener {
 
             inner.add(titlePanel, BorderLayout.NORTH);
 
-            // ─ 버튼 3개 가로 배치 ─
             JPanel buttonsPanel = new JPanel();
             buttonsPanel.setOpaque(false);
-            buttonsPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 15, 20));
+            buttonsPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 15, 10));
 
             for (int i = 0; i < 3; i++) {
                 optionButtons[i] = new ChoiceButton("옵션 " + (i + 1));
@@ -1058,14 +1159,19 @@ public class GamePanel extends JPanel implements KeyListener {
                 buttonsPanel.add(optionButtons[i]);
             }
 
-            inner.add(buttonsPanel, BorderLayout.CENTER);
-
-            // 힌트 텍스트
             JLabel hint = new JLabel("각 옵션 위에 마우스를 올리면 상세 설명이 표시됩니다");
             hint.setHorizontalAlignment(SwingConstants.CENTER);
             hint.setFont(new Font("맑은 고딕", Font.PLAIN, 12));
             hint.setForeground(new Color(90, 80, 70));
-            inner.add(hint, BorderLayout.SOUTH);
+
+            JPanel southBox = new JPanel();
+            southBox.setOpaque(false);
+            southBox.setLayout(new BoxLayout(southBox, BoxLayout.Y_AXIS));
+            southBox.add(buttonsPanel);
+            southBox.add(Box.createVerticalStrut(6));
+            southBox.add(hint);
+
+            inner.add(southBox, BorderLayout.SOUTH);
 
             add(inner);
 
@@ -1118,11 +1224,9 @@ public class GamePanel extends JPanel implements KeyListener {
             int w = getWidth();
             int h = getHeight();
 
-            // 화면 전체 어둡게
             g2.setColor(new Color(0, 0, 0, 170));
             g2.fillRect(0, 0, w, h);
 
-            // 가운데 유리창 박스
             Rectangle r = inner.getBounds();
             int padding = 18;
             int dialogX = r.x - padding;
@@ -1140,7 +1244,6 @@ public class GamePanel extends JPanel implements KeyListener {
             g2.setPaint(gp);
             g2.fillRoundRect(dialogX, dialogY, dialogW, dialogH, arc, arc);
 
-            // 빛나는 테두리
             g2.setColor(new Color(255, 255, 255, 160));
             g2.setStroke(new BasicStroke(2.0f));
             g2.drawRoundRect(dialogX, dialogY, dialogW, dialogH, arc, arc);
@@ -1155,9 +1258,6 @@ public class GamePanel extends JPanel implements KeyListener {
         }
     }
 
-    // ----------------------------------------------------
-    // WeaponSelectPanel : 시작 무기 선택 창
-    // ----------------------------------------------------
     private class WeaponSelectPanel extends JPanel {
 
         private JPanel inner;
@@ -1171,7 +1271,6 @@ public class GamePanel extends JPanel implements KeyListener {
             inner.setLayout(new BorderLayout());
             inner.setBorder(BorderFactory.createEmptyBorder(20, 30, 25, 30));
 
-            // 타이틀
             JLabel title = new JLabel("무기 선택");
             title.setFont(new Font("맑은 고딕", Font.BOLD, 30));
             title.setHorizontalAlignment(SwingConstants.CENTER);
@@ -1191,7 +1290,6 @@ public class GamePanel extends JPanel implements KeyListener {
 
             inner.add(titlePanel, BorderLayout.NORTH);
 
-            // 버튼 3개 (가로)
             JPanel buttonsPanel = new JPanel();
             buttonsPanel.setOpaque(false);
             buttonsPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 15, 20));
@@ -1203,11 +1301,6 @@ public class GamePanel extends JPanel implements KeyListener {
             swordBtn.setPreferredSize(new Dimension(160, 50));
             bowBtn.setPreferredSize(new Dimension(160, 50));
             staffBtn.setPreferredSize(new Dimension(160, 50));
-
-            // 툴팁
-            swordBtn.setToolTipText("<html>근거리 360도 공격<br>레벨마다 데미지↑, 범위↑, 쿨타임↓</html>");
-            bowBtn.setToolTipText("<html>중거리 투사체<br>다단 히트, 레벨마다 화살 수↑, 관통 수↑</html>");
-            staffBtn.setToolTipText("<html>먼 거리 폭발 마법<br>큰 범위, 레벨마다 데미지↑, 폭발 반경↑</html>");
 
             swordBtn.addActionListener(e -> chooseWeapon(WeaponType.SWORD));
             bowBtn.addActionListener(e -> chooseWeapon(WeaponType.BOW));
@@ -1227,18 +1320,18 @@ public class GamePanel extends JPanel implements KeyListener {
                     centerInner();
                 }
             });
-            
-            SwingUtilities.invokeLater(() -> centerInner());
+
+            SwingUtilities.invokeLater(this::centerInner);
         }
 
         private void chooseWeapon(WeaponType type) {
-            player.addOrUpgradeWeapon(type); // 기본 무기 등록 (레벨 1)
+            player.addOrUpgradeWeapon(type);
             waitingWeaponSelect = false;
             setVisible(false);
 
-            // 시간 측정 시작 시점을 선택 이후로
-            startNanoTime = System.nanoTime();
-
+            resetPlayTime();
+            paused = false;
+            gameState = GameState.RUNNING;
             requestFocusInWindow();
         }
 
@@ -1262,11 +1355,9 @@ public class GamePanel extends JPanel implements KeyListener {
             int w = getWidth();
             int h = getHeight();
 
-            // 화면 전체 어둡게
             g2.setColor(new Color(0, 0, 0, 170));
             g2.fillRect(0, 0, w, h);
 
-            // 유리창 박스
             Rectangle r = inner.getBounds();
             int padding = 18;
             int dialogX = r.x - padding;
@@ -1297,13 +1388,19 @@ public class GamePanel extends JPanel implements KeyListener {
             super.paintComponent(g);
         }
     }
-    
-    // ----------------------------------------------------
-    // GameOverPanel : HP 0일 때 뜨는 게임오버 화면
-    // ----------------------------------------------------
+
     private class GameOverPanel extends JPanel {
 
         private JPanel inner;
+
+        private JLabel runScoreLabel, runKillLabel, runTimeLabel;
+        private JLabel bestScoreLabel, bestKillLabel, bestTimeLabel;
+
+        private JLabel bestTitleLabel;
+        private boolean showNew = false;
+
+        private javax.swing.Timer blinkTimer;
+        private boolean blinkOn = true;
 
         public GameOverPanel() {
             setOpaque(false);
@@ -1311,56 +1408,149 @@ public class GamePanel extends JPanel implements KeyListener {
 
             inner = new JPanel();
             inner.setOpaque(false);
-            inner.setLayout(new BorderLayout());
-            inner.setBorder(BorderFactory.createEmptyBorder(30, 40, 30, 40));
+            inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
+            inner.setBorder(BorderFactory.createEmptyBorder(28, 44, 36, 44));
 
-            // ─ 타이틀 ─
+            inner.setPreferredSize(new Dimension(700, 390));
+
+            JPanel titleRow = new JPanel();
+            titleRow.setOpaque(false);
+            titleRow.setLayout(new BoxLayout(titleRow, BoxLayout.X_AXIS));
+
             JLabel title = new JLabel("GAME OVER");
-            title.setFont(new Font("Serif", Font.BOLD, 48));
-            title.setHorizontalAlignment(SwingConstants.CENTER);
+            title.setFont(new Font("Serif", Font.BOLD, 54));
             title.setForeground(new Color(220, 70, 40));
 
-            JPanel titlePanel = new JPanel();
-            titlePanel.setOpaque(false);
-            titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.Y_AXIS));
-            titlePanel.add(title);
+            titleRow.add(Box.createHorizontalGlue());
+            titleRow.add(title);
+            titleRow.add(Box.createHorizontalGlue());
 
-            inner.add(titlePanel, BorderLayout.NORTH);
+            inner.add(titleRow);
+            inner.add(Box.createVerticalStrut(18));
 
-            // ─ 버튼 2개 (세로) ─
+            JPanel table = new JPanel(new GridBagLayout());
+            table.setOpaque(false);
+
+            GridBagConstraints gc = new GridBagConstraints();
+            gc.insets = new Insets(8, 14, 8, 14);
+            gc.fill = GridBagConstraints.HORIZONTAL;
+
+            double[] wx = {1.35, 1.0, 1.0, 1.0};
+
+            JLabel runTitle = makeRowTitle("이번 판", Color.WHITE);
+
+            bestTitleLabel = makeRowTitle("최고 기록", new Color(255, 210, 120));
+            setBestTitleNew(false);
+
+            runScoreLabel = makeCellLabel(Color.WHITE);
+            runKillLabel  = makeCellLabel(Color.WHITE);
+            runTimeLabel  = makeCellLabel(Color.WHITE);
+
+            bestScoreLabel = makeCellLabel(new Color(255, 210, 120));
+            bestKillLabel  = makeCellLabel(new Color(255, 210, 120));
+            bestTimeLabel  = makeCellLabel(new Color(255, 210, 120));
+
+            gc.gridy = 0;
+            addCell(table, gc, 0, wx[0], runTitle, SwingConstants.LEFT);
+            addCell(table, gc, 1, wx[1], runScoreLabel, SwingConstants.RIGHT);
+            addCell(table, gc, 2, wx[2], runKillLabel,  SwingConstants.RIGHT);
+            addCell(table, gc, 3, wx[3], runTimeLabel,  SwingConstants.RIGHT);
+
+            gc.gridy = 1;
+            addCell(table, gc, 0, wx[0], bestTitleLabel, SwingConstants.LEFT);
+            addCell(table, gc, 1, wx[1], bestScoreLabel, SwingConstants.RIGHT);
+            addCell(table, gc, 2, wx[2], bestKillLabel,  SwingConstants.RIGHT);
+            addCell(table, gc, 3, wx[3], bestTimeLabel,  SwingConstants.RIGHT);
+
+            table.setMaximumSize(new Dimension(900, 120));
+            table.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+            inner.add(table);
+            inner.add(Box.createVerticalStrut(24));
+
             JPanel buttonsPanel = new JPanel();
             buttonsPanel.setOpaque(false);
             buttonsPanel.setLayout(new BoxLayout(buttonsPanel, BoxLayout.Y_AXIS));
+            buttonsPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
             ChoiceButton contBtn = new ChoiceButton("Continue");
             ChoiceButton quitBtn = new ChoiceButton("Quit");
 
+            Dimension btnSize = new Dimension(420, 60);
+            contBtn.setPreferredSize(btnSize);
+            quitBtn.setPreferredSize(btnSize);
+            contBtn.setMaximumSize(btnSize);
+            quitBtn.setMaximumSize(btnSize);
+            contBtn.setMinimumSize(btnSize);
+            quitBtn.setMinimumSize(btnSize);
+
             contBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
             quitBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-            contBtn.setPreferredSize(new Dimension(220, 45));
-            quitBtn.setPreferredSize(new Dimension(220, 45));
-            contBtn.setMaximumSize(new Dimension(220, 45));
-            quitBtn.setMaximumSize(new Dimension(220, 45));
 
             contBtn.addActionListener(e -> restartRun());
             quitBtn.addActionListener(e -> returnToMainMenu());
 
-            buttonsPanel.add(Box.createVerticalStrut(25));
             buttonsPanel.add(contBtn);
-            buttonsPanel.add(Box.createVerticalStrut(12));
+            buttonsPanel.add(Box.createVerticalStrut(16));
             buttonsPanel.add(quitBtn);
-            buttonsPanel.add(Box.createVerticalStrut(10));
 
-            inner.add(buttonsPanel, BorderLayout.CENTER);
-
+            inner.add(buttonsPanel);
             add(inner);
 
             addComponentListener(new ComponentAdapter() {
-                @Override
-                public void componentResized(ComponentEvent e) {
-                    centerInner();
-                }
+                @Override public void componentResized(ComponentEvent e) { centerInner(); }
             });
+
+            blinkTimer = new javax.swing.Timer(600, e -> {
+                blinkOn = !blinkOn;
+                setBestTitleNew(showNew && blinkOn);
+                repaint();
+            });
+
+            SwingUtilities.invokeLater(this::centerInner);
+        }
+
+        private void setBestTitleNew(boolean on) {
+            if (!showNew) {
+                bestTitleLabel.setText("최고 기록");
+                bestTitleLabel.setForeground(new Color(255, 210, 120));
+                return;
+            }
+            if (!on) {
+                bestTitleLabel.setText("최고 기록");
+                bestTitleLabel.setForeground(new Color(255, 210, 120));
+                return;
+            }
+            bestTitleLabel.setText("<html>최고 기록&nbsp;<span style='color:#FFE678;font-size:16px;vertical-align:super;'>NEW!</span></html>");
+            bestTitleLabel.setForeground(new Color(255, 210, 120));
+        }
+
+        public void updateRecords(int rk, int rt, int rs, int bk, int bt, int bs, boolean isNewBest) {
+            String runTime  = String.format("%02d:%02d", rt / 60, rt % 60);
+            String bestTime = String.format("%02d:%02d", bt / 60, bt % 60);
+
+            runScoreLabel.setText("Score: " + rs);
+            runKillLabel.setText("Kill: " + rk);
+            runTimeLabel.setText("Time: " + runTime);
+
+            bestScoreLabel.setText("Score: " + bs);
+            bestKillLabel.setText("Kill: " + bk);
+            bestTimeLabel.setText("Time: " + bestTime);
+
+            showNew = isNewBest;
+
+            if (isNewBest) {
+                blinkOn = true;
+                setBestTitleNew(true);
+                if (!blinkTimer.isRunning()) blinkTimer.start();
+            } else {
+                if (blinkTimer.isRunning()) blinkTimer.stop();
+                setBestTitleNew(false);
+            }
+
+            revalidate();
+            repaint();
+            centerInner();
         }
 
         private void centerInner() {
@@ -1377,25 +1567,21 @@ public class GamePanel extends JPanel implements KeyListener {
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                                RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            int w = getWidth();
-            int h = getHeight();
+            int w = getWidth(), h = getHeight();
 
-            // 전체를 어둡게
             g2.setColor(new Color(0, 0, 0, 230));
             g2.fillRect(0, 0, w, h);
 
-            // 가운데 다크 박스
             Rectangle r = inner.getBounds();
-            int padding = 24;
+            int padding = 26;
             int dialogX = r.x - padding;
             int dialogY = r.y - padding;
             int dialogW = r.width  + padding * 2;
             int dialogH = r.height + padding * 2;
-            int arc = 30;
 
+            int arc = 34;
             GradientPaint gp = new GradientPaint(
                     dialogX, dialogY,
                     new Color(25, 25, 25, 240),
@@ -1405,113 +1591,188 @@ public class GamePanel extends JPanel implements KeyListener {
             g2.setPaint(gp);
             g2.fillRoundRect(dialogX, dialogY, dialogW, dialogH, arc, arc);
 
-            // 붉은 테두리
             g2.setColor(new Color(200, 80, 40, 220));
-            g2.setStroke(new BasicStroke(2.5f));
+            g2.setStroke(new BasicStroke(2.8f));
             g2.drawRoundRect(dialogX, dialogY, dialogW, dialogH, arc, arc);
 
             g2.dispose();
             super.paintComponent(g);
         }
+
+        private JLabel makeRowTitle(String text, Color c) {
+            JLabel lb = new JLabel(text);
+            lb.setFont(new Font("맑은 고딕", Font.BOLD, 20));
+            lb.setForeground(c);
+            return lb;
+        }
+
+        private JLabel makeCellLabel(Color c) {
+            JLabel lb = new JLabel("");
+            lb.setFont(new Font("맑은 고딕", Font.BOLD, 18));
+            lb.setForeground(c);
+            return lb;
+        }
+
+        private void addCell(JPanel table, GridBagConstraints gc, int x, double wx,
+                             JComponent comp, int align) {
+            gc.gridx = x;
+            gc.weightx = wx;
+
+            if (comp instanceof JLabel) {
+                ((JLabel) comp).setHorizontalAlignment(align);
+            }
+
+            table.add(comp, gc);
+        }
+    }
+
+    private int calcScore(int kills, int timeSec) {
+        return kills * 100 + timeSec * 5;
+    }
+
+    private void loadBestRecord() {
+        bestScore = prefs.getInt("bestScore", 0);
+        bestKills = prefs.getInt("bestKills", 0);
+        bestTimeSec = prefs.getInt("bestTimeSec", 0);
     }
     
-    private void drawHeartIcon(Graphics2D g2, int cx, int cy, int size) {
-        int w = size;
-        int h = size;
-        int x = cx - w / 2;
-        int y = cy - h / 2;
+    public void saveRun() {
+        // 무기 선택 중이거나 게임오버면 저장하지 않음
+        if (waitingWeaponSelect) return;
+        if (gameState == GameState.GAMEOVER) return;
 
-        g2.setColor(new Color(220, 40, 70));
-        g2.fillOval(x, y, w / 2, h / 2);
-        g2.fillOval(x + w / 2, y, w / 2, h / 2);
+        SaveState st = new SaveState();
+        st.valid = true;
 
-        Polygon p = new Polygon();
-        p.addPoint(x, y + h / 4);
-        p.addPoint(x + w, y + h / 4);
-        p.addPoint(x + w / 2, y + h);
-        g2.fillPolygon(p);
+        st.killCount = this.killCount;
+        st.elapsedPlaySec = getElapsedPlaySec();
 
-        g2.setColor(new Color(120, 0, 30));
-        g2.setStroke(new BasicStroke(1f));
-        g2.drawPolygon(p);
+        st.eliteTimer = this.eliteTimer;
+        st.nonBossKillCount = this.nonBossKillCount;
+        st.bossAlive = this.bossAlive;
+        st.bossKillThreshold = this.bossKillThreshold;
+        st.spawnTimer = this.spawnTimer;
+
+        st.player = player.exportState();
+
+        SaveManager.save(st);
     }
 
-    private void drawSwordIcon(Graphics2D g2, int cx, int cy, int size) {
-        int bladeLen = size;
-        int bladeW   = size / 4;
+    public boolean loadFromSave(SaveState st) {
+        if (st == null || !st.valid) return false;
 
-        int x = cx - bladeW / 2;
-        int y = cy - bladeLen / 2;
+        // 일단 새 플레이어 만들어둔 상태(GamePanel 생성자에서 이미 생성됨)에서 값만 덮어쓰기
+        this.player.importState(st.player);
+        this.player.updateScreenCenter();
 
-        // 칼날
-        g2.setColor(new Color(200, 200, 220));
-        g2.fillRoundRect(x, y, bladeW, bladeLen, 4, 4);
+        this.killCount = st.killCount;
 
-        // 손잡이
-        g2.setColor(new Color(120, 80, 40));
-        g2.fillRect(cx - size / 2, cy + bladeLen / 2 - 2, size, 4);
+        // 시간 복원
+        this.playAccumNano = (long) st.elapsedPlaySec * 1_000_000_000L;
+        this.playResumeNano = 0L;
+
+        this.eliteTimer = st.eliteTimer;
+        this.nonBossKillCount = st.nonBossKillCount;
+        this.bossAlive = st.bossAlive;
+        this.bossKillThreshold = st.bossKillThreshold;
+        this.spawnTimer = st.spawnTimer;
+
+        // 이어하기는 이미 진행 중인 판이므로 무기 선택 스킵
+        this.waitingWeaponSelect = false;
+        this.weaponSelectPanel.setVisible(false);
+
+        // 투사체/이펙트는 로드시 초기화(안전)
+        this.arrows.clear();
+        this.fireballs.clear();
+        this.enemyProjectiles.clear();
+        this.damageTexts.clear();
+
+        // 몬스터/구슬은 “간단 이어하기 버전”으로 초기화(원하면 다음 단계에서 몬스터까지 저장 가능)
+        this.monsters.clear();
+        this.expOrbs.clear();
+
+        this.paused = false;
+        this.gameState = GameState.RUNNING;
+
+        // UI 표시값도 맞춰주기
+        this.uiHpDisplay = player.getCurrentHp();
+        double expTarget = 0.0;
+        if (player.getExpToNextLevel() > 0) {
+            expTarget = (double) player.getCurrentExp() / player.getExpToNextLevel();
+        }
+        this.uiExpDisplay = expTarget;
+
+        return true;
     }
-    
-    // ─────────────────────────────────────
-    // 작은 UI 아이콘들 (하트 / 검 / 부츠)
-    // ─────────────────────────────────────
-    private void drawBootIcon(Graphics2D g2, int cx, int cy, int size) {
-        int w = size;
-        int h = size;
-        int x = cx - w / 2;
-        int y = cy - h / 2;
 
-        g2.setColor(new Color(150, 110, 60));
-        g2.fillRoundRect(x, y + h / 4, w, h / 2, 4, 4);
-
-        // 앞코
-        g2.fillRoundRect(x + w / 2, y + h / 2, w / 2, h / 3, 4, 4);
-
-        g2.setColor(new Color(90, 60, 30));
-        g2.setStroke(new BasicStroke(1f));
-        g2.drawRoundRect(x, y + h / 4, w, h / 2, 4, 4);
+    private void saveBestRecord() {
+        prefs.putInt("bestScore", bestScore);
+        prefs.putInt("bestKills", bestKills);
+        prefs.putInt("bestTimeSec", bestTimeSec);
     }
-    
- // 게임오버 진입
+
     private void triggerGameOver() {
+    	SaveManager.clearSave();
         paused = true;
         gameState = GameState.GAMEOVER;
-        showStatusPanel = false; // TAB 패널 끄기
+        showStatusPanel = false;
+
+        onLeaveRunning();
+
+        runKills = killCount;
+        runTimeSec = getElapsedPlaySec();
+        runScore = calcScore(runKills, runTimeSec);
+
+        boolean isNewBest = false;
+
+        if (runScore > bestScore) {
+            bestScore = runScore;
+            bestKills = runKills;
+            bestTimeSec = runTimeSec;
+            saveBestRecord();
+            isNewBest = true;
+        }
 
         if (gameOverPanel != null) {
+            gameOverPanel.updateRecords(runKills, runTimeSec, runScore,
+                    bestKills, bestTimeSec, bestScore, isNewBest);
+
             gameOverPanel.setBounds(0, 0, getWidth(), getHeight());
             gameOverPanel.setVisible(true);
+
             gameOverPanel.revalidate();
             gameOverPanel.repaint();
         }
     }
 
-    // Continue 버튼에서 호출: 한 판을 완전히 새로 시작
     private void restartRun() {
-
-        // 기존 객체들 싹 정리
         monsters.clear();
         expOrbs.clear();
         arrows.clear();
         fireballs.clear();
+        enemyProjectiles.clear();
         damageTexts.clear();
 
-        // 플레이어 새로 만들기 (처음 상태)
+        eliteTimer = 0;
+        nonBossKillCount = 0;
+        bossAlive = false;
+        bossKillThreshold = 50;
+        spawnTimer = 0;
+
         player = new Player(this, keyH, null);
         player.updateScreenCenter();
 
-        // 통계/상태 리셋
         killCount = 0;
-        startNanoTime = 0L;
-        waitingWeaponSelect = true;  // 다시 무기 선택부터
+        waitingWeaponSelect = true;
         showStatusPanel = false;
 
-        // HP/EXP UI 애니메이션 값도 초기화 (있다면)
+        resetPlayTime();
+
         uiHpDisplay = player.getCurrentHp();
         uiExpDisplay = 0.0;
 
-        // 패널 상태
-        gameOverPanel.setVisible(false);
+        if (gameOverPanel != null) gameOverPanel.setVisible(false);
+
         weaponSelectPanel.setVisible(true);
         weaponSelectPanel.setBounds(0, 0, getWidth(), getHeight());
 
@@ -1521,7 +1782,8 @@ public class GamePanel extends JPanel implements KeyListener {
         requestFocusInWindow();
     }
 
-    // 화면 크기 getter
     public int getScreenWidth()  { return SCREEN_WIDTH; }
     public int getScreenHeight() { return SCREEN_HEIGHT; }
 }
+
+

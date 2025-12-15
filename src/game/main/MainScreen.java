@@ -4,6 +4,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.RoundRectangle2D;
+import game.save.SaveManager;
+import game.save.SaveState;
 
 public class MainScreen extends JFrame {
 
@@ -260,15 +262,14 @@ public class MainScreen extends JFrame {
         }
 
         // 시작 → 무기 선택 → 게임 시작
-        startBtn.addActionListener(e -> startGame());
+        startBtn.addActionListener(e -> {
+            SaveManager.clearSave();
+            startGame();
+        });
 
         // 이어하기 (임시)
-        continueBtn.addActionListener(e ->
-                JOptionPane.showMessageDialog(
-                        MainScreen.this,
-                        "이어하기 기능은 추후 추가 예정입니다."
-                )
-        );
+        continueBtn.setEnabled(SaveManager.hasSave());
+        continueBtn.addActionListener(e -> startContinueGame());
 
         // 종료
         exitBtn.addActionListener(e -> System.exit(0));
@@ -291,6 +292,38 @@ public class MainScreen extends JFrame {
         setTitle("Vamsur - game");
         revalidate();
         repaint();
+
+        gamePanel.requestFocusInWindow();
+        gamePanel.startGameLoop();
+    }
+    public void startContinueGame() {
+        SaveState st = SaveManager.load();
+        if (st == null || !st.valid) {
+            JOptionPane.showMessageDialog(
+                    MainScreen.this,
+                    "이어하기 데이터가 없습니다."
+            );
+            SaveManager.clearSave();
+            buildMainMenu();
+            return;
+        }
+
+        GamePanel gamePanel = new GamePanel(this);
+        setContentPane(gamePanel);
+        setTitle("Vamsur - game");
+        revalidate();
+        repaint();
+
+        boolean ok = gamePanel.loadFromSave(st);
+        if (!ok) {
+            JOptionPane.showMessageDialog(
+                    MainScreen.this,
+                    "이어하기 데이터를 불러오지 못했습니다."
+            );
+            SaveManager.clearSave();
+            buildMainMenu();
+            return;
+        }
 
         gamePanel.requestFocusInWindow();
         gamePanel.startGameLoop();
